@@ -17,8 +17,8 @@ const BALL_IDS = ["cue", ...Array.from( { length: 15 }, ( _, index ) => String( 
 const BALL_COLORS = ["#f2c200", "#1d4fc4", "#d3212d", "#5a2d8c", "#f2711c", "#128041", "#7d1d24", "#141414"];
 const CUE_COLOR = "#f6f3ea";
 
-const CLOTH_COLOR = "#7b8692";
-const CUSHION_COLOR = "#606a75";
+const CLOTH_COLOR = "#a3acb6";
+const CUSHION_COLOR = "#86909b";
 
 // aim: where the pocket line points. draw: the pocket hole drawn on the rail,
 // sized to a regulation mouth (corners about 4.6 in, sides about 5 in).
