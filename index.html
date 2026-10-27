@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pool Pattern Board</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Pool Pattern Board</h1>
+      <div class="history-tools">
+        <button id="undo" type="button" title="Undo (Ctrl+Z)">Undo</button>
+        <button id="redo" type="button" title="Redo (Ctrl+Y)">Redo</button>
+        <button id="clear-board" type="button">Clear table</button>
+      </div>
+    </header>
+
+    <p id="hotkeys" class="hotkeys"></p>
+
+    <section class="toolbar" aria-label="Tools">
+      <div class="mode-switch" role="group" aria-label="Mode">
+        <button type="button" data-mode="ball" title="Work on a ball: pocket, target and zones (B)">Balls <kbd>B</kbd></button>
+        <button type="button" data-mode="line" title="Draw and edit lines (L)">Lines <kbd>L</kbd></button>
+      </div>
+
+      <div id="ball-strip" class="strip" role="group" aria-label="Selected ball">
+        <span id="current-ball" class="current-ball"></span>
+        <span class="item">
+          <span class="item-label">Pocket</span>
+          <span id="pocket-name" class="item-value"></span>
+          <button type="button" class="clear" id="clear-pocket" title="Clear this ball's pocket" aria-label="Clear pocket">×</button>
+        </span>
+        <span class="item" id="item-zone">
+          <i class="swatch good"></i><span class="item-label">Zone</span>
+          <button type="button" class="clear" id="clear-zone" title="Remove the target and good zone" aria-label="Clear zone">×</button>
+        </span>
+        <span class="item" id="item-ok">
+          <i class="swatch ok"></i><span class="item-label">Widened</span>
+          <button type="button" class="clear" id="clear-ok" title="Remove the widened OK zone" aria-label="Clear widened zone">×</button>
+        </span>
+        <span class="item" id="item-path">
+          <i class="swatch path"></i><span class="item-label">Movement</span>
+          <button type="button" class="clear" id="clear-path" title="Remove the movement path" aria-label="Clear movement">×</button>
+        </span>
+        <button type="button" id="clear-zones" title="Remove this ball's zones and movement">Clear all</button>
+      </div>
+
+      <div id="line-strip" class="strip" role="group" aria-label="Line style" hidden>
+        <span id="line-swatches" class="line-swatches"></span>
+        <input id="line-custom-color" type="color" title="Custom line color" aria-label="Custom line color">
+        <span class="mode-switch line-widths" role="group" aria-label="Line width">
+          <button type="button" data-width="thin">Thin</button>
+          <button type="button" data-width="medium">Medium</button>
+          <button type="button" data-width="thick">Thick</button>
+        </span>
+        <label class="check"><input id="line-arrow" type="checkbox"> Arrow</label>
+        <button type="button" id="delete-line">Delete line</button>
+      </div>
+    </section>
+
+    <section class="table-wrap">
+      <svg id="board" class="board" viewBox="-7 -7 114 64" aria-label="Pool table">
+        <defs id="board-defs"></defs>
+        <g id="layer-table"></g>
+        <g id="layer-regions"></g>
+        <g id="layer-pocket-lines"></g>
+        <g id="layer-lines"></g>
+        <g id="layer-pockets"></g>
+        <g id="layer-balls"></g>
+        <g id="layer-handles"></g>
+        <g id="layer-draft"></g>
+      </svg>
+    </section>
+
+    <p id="status" class="status" aria-live="polite"></p>
+
+    <section class="tray" aria-label="Balls">
+      <span class="group-label">Balls</span>
+      <div id="tray" class="tray-balls"></div>
+    </section>
+
+    <section class="view-options" aria-label="Show">
+      <span class="group-label">Show</span>
+      <label class="check"><input id="show-pocket-lines" type="checkbox"> Pocket lines <kbd>P</kbd></label>
+      <label class="check"><input data-show="hand" type="checkbox"> <i class="legend legend-hand"></i>Target</label>
+      <label class="check"><input data-show="good" type="checkbox"> <i class="legend legend-good"></i>Good</label>
+      <label class="check"><input data-show="ok" type="checkbox"> <i class="legend legend-ok"></i>OK</label>
+      <label class="check"><input data-show="path" type="checkbox"> <i class="legend legend-path"></i>Movement</label>
+    </section>
+  </main>
+
+  <div id="drag-ghost" class="drag-ghost" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
