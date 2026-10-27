@@ -20,15 +20,21 @@ const CUE_COLOR = "#f6f3ea";
 const CLOTH_COLOR = "#a3acb6";
 const CUSHION_COLOR = "#86909b";
 
-// aim: where the pocket line points. draw: the pocket hole drawn on the rail,
-// sized to a regulation mouth (corners about 4.6 in, sides about 5 in).
+// A corner pocket's 4.6 in mouth runs across the corner, so its middle sits
+// this far in from each rail.
+const CORNER_MOUTH_INSET = 4.6 / Math.SQRT2 / 2;
+
+// aim: the middle of the pocket opening, where a straight-in shot is played.
+// corner: the cloth corner behind a corner pocket's opening. draw: the pocket
+// hole drawn on the rail, sized to a regulation mouth (corners about 4.6 in,
+// sides about 5 in).
 const POCKETS = [
-  { id: "tl", aim: { x: 0, y: 0 }, draw: { x: -1.1, y: -1.1 }, radius: 2.35 },
-  { id: "tm", aim: { x: 50, y: -0.6 }, draw: { x: 50, y: -2.4 }, radius: 2.5 },
-  { id: "tr", aim: { x: 100, y: 0 }, draw: { x: 101.1, y: -1.1 }, radius: 2.35 },
-  { id: "bl", aim: { x: 0, y: 50 }, draw: { x: -1.1, y: 51.1 }, radius: 2.35 },
-  { id: "bm", aim: { x: 50, y: 50.6 }, draw: { x: 50, y: 52.4 }, radius: 2.5 },
-  { id: "br", aim: { x: 100, y: 50 }, draw: { x: 101.1, y: 51.1 }, radius: 2.35 }
+  { id: "tl", aim: { x: CORNER_MOUTH_INSET, y: CORNER_MOUTH_INSET }, corner: { x: 0, y: 0 }, draw: { x: -1.1, y: -1.1 }, radius: 2.35 },
+  { id: "tm", aim: { x: 50, y: 0 }, draw: { x: 50, y: -2.4 }, radius: 2.5 },
+  { id: "tr", aim: { x: CLOTH_WIDTH - CORNER_MOUTH_INSET, y: CORNER_MOUTH_INSET }, corner: { x: CLOTH_WIDTH, y: 0 }, draw: { x: 101.1, y: -1.1 }, radius: 2.35 },
+  { id: "bl", aim: { x: CORNER_MOUTH_INSET, y: CLOTH_HEIGHT - CORNER_MOUTH_INSET }, corner: { x: 0, y: CLOTH_HEIGHT }, draw: { x: -1.1, y: 51.1 }, radius: 2.35 },
+  { id: "bm", aim: { x: 50, y: CLOTH_HEIGHT }, draw: { x: 50, y: 52.4 }, radius: 2.5 },
+  { id: "br", aim: { x: CLOTH_WIDTH - CORNER_MOUTH_INSET, y: CLOTH_HEIGHT - CORNER_MOUTH_INSET }, corner: { x: CLOTH_WIDTH, y: CLOTH_HEIGHT }, draw: { x: 101.1, y: 51.1 }, radius: 2.35 }
 ];
 
 // OK is the good shape made wider or longer, so it is drawn first and the good
@@ -373,14 +379,37 @@ function lineMarkup( line, hit = true ) {
   return markup;
 }
 
+// Where a straight-in shot on this ball aims: the middle of the pocket
+// opening. A ball closer to a rail than that middle is played along the rail
+// instead, so the aim slides level with the ball on that side.
+function pocketAim( ball ) {
+  const pocket = POCKETS.find( p => p.id === ball.pocket );
+  if ( !pocket ) return null;
+  const { aim, corner } = pocket;
+  if ( !corner ) return aim;
+  return {
+    x: Math.abs( ball.x - corner.x ) < Math.abs( aim.x - corner.x ) ? ball.x : aim.x,
+    y: Math.abs( ball.y - corner.y ) < Math.abs( aim.y - corner.y ) ? ball.y : aim.y
+  };
+}
+
+// Unit vector from the pocket's aim back through the ball: the cue ball's side.
+function awayFromPocket( ball ) {
+  const aim = pocketAim( ball );
+  if ( !aim ) return null;
+  const length = distance( ball, aim );
+  if ( length < 0.01 ) return null;
+  return { x: ( ball.x - aim.x ) / length, y: ( ball.y - aim.y ) / length };
+}
+
 // The line the cue ball travels on for a straight-in shot: from the back of
 // the object ball, directly away from the pocket, to where the cue ball would
 // meet the cushion.
 function pocketLineMarkup( id, ball ) {
-  const pocket = POCKETS.find( p => p.id === ball.pocket );
-  const length = distance( ball, pocket.aim ) || 1;
-  const ux = ( ball.x - pocket.aim.x ) / length;
-  const uy = ( ball.y - pocket.aim.y ) / length;
+  const away = awayFromPocket( ball );
+  if ( !away ) return "";
+  const ux = away.x;
+  const uy = away.y;
   const limits = [];
   if ( ux > 0 ) limits.push( ( CLOTH_WIDTH - BALL_RADIUS - ball.x ) / ux );
   if ( ux < 0 ) limits.push( ( BALL_RADIUS - ball.x ) / ux );
@@ -396,12 +425,11 @@ function pocketLineMarkup( id, ball ) {
 // Where the cue ball's center is at contact: one ball width behind the object
 // ball, directly away from its pocket. Movement paths start here.
 function ghostBall( ball ) {
-  const pocket = POCKETS.find( p => p.id === ball.pocket );
-  if ( !pocket ) return null;
-  const length = distance( ball, pocket.aim ) || 1;
+  const away = awayFromPocket( ball );
+  if ( !away ) return null;
   return {
-    x: ball.x + ( ball.x - pocket.aim.x ) / length * 2 * BALL_RADIUS,
-    y: ball.y + ( ball.y - pocket.aim.y ) / length * 2 * BALL_RADIUS
+    x: ball.x + away.x * 2 * BALL_RADIUS,
+    y: ball.y + away.y * 2 * BALL_RADIUS
   };
 }
 
