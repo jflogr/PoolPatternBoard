@@ -5,9 +5,15 @@ lines and shaded polygons to show the pattern you would play to clear the table.
 
 ## Running it
 
-Open `index.html` in a current browser, or run `node server.mjs` and go to
-http://localhost:4175. Nothing is installed and nothing leaves the browser: the
-board is kept in the browser's local storage.
+**Use it online: https://jflogr.github.io/PoolPatternBoard/** — GitHub Pages
+serves the latest version on `master`, updated a minute or so after each push.
+
+To run it locally, open `index.html` in a current browser, or run
+`node server.mjs` and go to http://localhost:4175.
+
+Nothing is installed and nothing leaves the browser: the board is kept in the
+browser's local storage, so each browser (and the online and local copies) has
+its own board.
 
 ## Using it
 
