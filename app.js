@@ -1301,6 +1301,72 @@ document.getElementById( "line-arrow" ).addEventListener( "change", event => {
   render();
 } );
 
+// ---------- save image ----------
+
+const EXPORT_PIXELS_PER_INCH = 20;
+// The page stylesheet doesn't travel with a serialized SVG, so the rules the
+// table's own drawing relies on go in with it.
+const EXPORT_STYLE = `
+  .ball-number { font-family: "Arial Black", "Segoe UI Black", "Segoe UI", sans-serif; font-weight: 900; text-anchor: middle; fill: #111; stroke: #111; stroke-width: 0.04; paint-order: stroke; }
+  .line-visual, .path-visual, .pocket-line { stroke-linecap: round; }
+  .region { stroke-linejoin: round; }`;
+
+// Draw the table as it stands, without handles, selection rings or click
+// targets, and download it as a PNG.
+async function saveImage() {
+  const kept = { selection: ui.selection, point: ui.point, draft: ui.draft };
+  ui.selection = null;
+  ui.point = null;
+  ui.draft = null;
+  render();
+  const copy = svg.cloneNode( true );
+  Object.assign( ui, kept );
+  render();
+
+  copy.querySelectorAll( ".line-hit, .edge-hit, .pocket-hit, .handle, .selected-ring" ).forEach( node => node.remove() );
+  const [, , width, height] = svg.getAttribute( "viewBox" ).split( " " ).map( Number );
+  const pixelWidth = width * EXPORT_PIXELS_PER_INCH;
+  const pixelHeight = height * EXPORT_PIXELS_PER_INCH;
+  copy.setAttribute( "xmlns", "http://www.w3.org/2000/svg" );
+  copy.setAttribute( "width", pixelWidth );
+  copy.setAttribute( "height", pixelHeight );
+  const style = document.createElementNS( "http://www.w3.org/2000/svg", "style" );
+  style.textContent = EXPORT_STYLE;
+  copy.prepend( style );
+
+  const url = URL.createObjectURL( new Blob( [new XMLSerializer().serializeToString( copy )], { type: "image/svg+xml" } ) );
+  try {
+    const picture = new Image();
+    await new Promise( ( resolve, reject ) => {
+      picture.onload = resolve;
+      picture.onerror = reject;
+      picture.src = url;
+    } );
+    const canvas = document.createElement( "canvas" );
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+    const context = canvas.getContext( "2d" );
+    context.fillStyle = "#12161b"; // page background behind the rounded rail corners
+    context.fillRect( 0, 0, pixelWidth, pixelHeight );
+    context.drawImage( picture, 0, 0, pixelWidth, pixelHeight );
+    const blob = await new Promise( resolve => canvas.toBlob( resolve, "image/png" ) );
+    const now = new Date();
+    const two = value => String( value ).padStart( 2, "0" );
+    const stamp = `${now.getFullYear()}-${two( now.getMonth() + 1 )}-${two( now.getDate() )}-${two( now.getHours() )}${two( now.getMinutes() )}`;
+    const link = document.createElement( "a" );
+    link.href = URL.createObjectURL( blob );
+    link.download = `pool-pattern-${stamp}.png`;
+    link.click();
+    setTimeout( () => URL.revokeObjectURL( link.href ), 1000 );
+  } catch {
+    ui.message = "Couldn't make the image in this browser.";
+    render();
+  } finally {
+    URL.revokeObjectURL( url );
+  }
+}
+
+document.getElementById( "save-image" ).addEventListener( "click", saveImage );
 document.getElementById( "undo" ).addEventListener( "click", undo );
 document.getElementById( "redo" ).addEventListener( "click", redo );
 

@@ -62,4 +62,5 @@ Drag to draw a line, or click the start and then the end. Click a line to
 select it, then drag it or its ends, or change its color, width (thin,
 medium or thick; thin is the default) and arrow.
 
-Ctrl+Z / Ctrl+Y undo and redo.
+Ctrl+Z / Ctrl+Y undo and redo. **Save image** downloads the table as a PNG
+(2280 x 1280), leaving out handles and selection rings.
