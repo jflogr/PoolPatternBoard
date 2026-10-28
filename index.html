@@ -11,20 +11,24 @@
     <header class="app-header">
       <h1>Pool Pattern Board</h1>
       <div class="history-tools">
+        <button id="share-layout" type="button" title="Copy a link to this layout: the balls only, so others can plan it their own way">Share layout</button>
         <button id="save-image" type="button" title="Download a picture of the table as a PNG">Save image</button>
         <button id="undo" type="button" title="Undo (Ctrl+Z)">Undo</button>
         <button id="redo" type="button" title="Redo (Ctrl+Y)">Redo</button>
         <button id="clear-board" type="button">Clear table</button>
+        <button id="open-help" type="button" title="How to use the board (F1)">Help</button>
       </div>
     </header>
 
     <p id="hotkeys" class="hotkeys"></p>
+    <div id="actions" class="actions" role="group" aria-label="Actions"></div>
 
     <section class="toolbar" aria-label="Tools">
       <div class="mode-switch" role="group" aria-label="Mode">
         <button type="button" data-mode="ball" title="Work on a ball: pocket, target and zones (B)">Balls <kbd>B</kbd></button>
         <button type="button" data-mode="line" title="Draw and edit lines (L)">Lines <kbd>L</kbd></button>
       </div>
+      <button type="button" id="lock-balls" class="lock-balls" aria-pressed="false"></button>
 
       <div id="ball-strip" class="strip" role="group" aria-label="Selected ball">
         <span id="current-ball" class="current-ball"></span>
@@ -64,14 +68,16 @@
     <section class="table-wrap">
       <svg id="board" class="board" viewBox="-7 -7 114 64" aria-label="Pool table">
         <defs id="board-defs"></defs>
-        <g id="layer-table"></g>
-        <g id="layer-regions"></g>
-        <g id="layer-pocket-lines"></g>
-        <g id="layer-lines"></g>
-        <g id="layer-pockets"></g>
-        <g id="layer-balls"></g>
-        <g id="layer-handles"></g>
-        <g id="layer-draft"></g>
+        <g id="world">
+          <g id="layer-table"></g>
+          <g id="layer-regions"></g>
+          <g id="layer-pocket-lines"></g>
+          <g id="layer-lines"></g>
+          <g id="layer-pockets"></g>
+          <g id="layer-balls"></g>
+          <g id="layer-handles"></g>
+          <g id="layer-draft"></g>
+        </g>
       </svg>
     </section>
 
@@ -91,6 +97,90 @@
       <label class="check"><input data-show="path" type="checkbox"> <i class="legend legend-path"></i>Movement</label>
     </section>
   </main>
+
+  <dialog id="help" class="help" aria-labelledby="help-title">
+    <div class="help-head">
+      <h2 id="help-title">How to use the board</h2>
+      <button type="button" id="close-help" class="clear" aria-label="Close help">×</button>
+    </div>
+    <div class="help-body">
+      <p>Lay out a rack, then plan how you would run it: where each ball goes, where
+        the cue ball should land for the next shot, and how it gets there. The table
+        is a 9 ft table to scale (100 × 50 in cloth, 2.25 in balls).</p>
+
+      <h3>1. Put the balls on the table</h3>
+      <ul>
+        <li>Drag a ball from the tray onto the table, or tap it in the tray and then tap the table.</li>
+        <li>Drag a ball to move it. Drag it off the table, double-click it, or select it and press
+          <kbd>Delete</kbd> to put it back in the tray.</li>
+        <li><b>Share layout</b> makes a link to the balls alone, with no pockets, zones or lines.
+          Anyone who opens it gets the same rack to plan their own way.</li>
+        <li>A shared layout opens with the balls <b>locked</b>, so planning can't move one by accident.
+          Locked balls can still be selected and planned. <b>🔒 Balls locked</b> (by Balls and Lines)
+          unlocks them; <b>🔓 Lock balls</b> locks your own layout too.</li>
+      </ul>
+
+      <h3>2. Plan each ball</h3>
+      <p>Click a ball to select it. The bar under the buttons shows what it has, and its × buttons
+        clear each part.</p>
+      <ul>
+        <li><b>Pocket:</b> click a pocket. A dotted line runs from the back of the ball, away from the
+          pocket: the line the cue ball is on for a straight-in shot. Click the pocket again to clear it.</li>
+        <li><b>Set zone</b> (<kbd>Z</kbd>): where the cue ball should end up. A target ring goes there,
+          with a good zone around it along the line to the ball.</li>
+        <li><b>Widen</b> (<kbd>W</kbd>): outside the good zone, stretches the OK zone out to that spot.
+          Use it on more than one side to grow the OK zone further.</li>
+        <li><b>Movement</b> (<kbd>M</kbd>): the cue ball's path from the ghost ball (pick the pocket
+          first). Click a rail for each bounce, then click the cloth where the cue ball stops.</li>
+        <li><b>Draw zone</b> (<kbd>G</kbd>): draw a good zone by hand, one corner at a time. Click the
+          first corner again, double-click or press <kbd>Enter</kbd> to close it.</li>
+      </ul>
+      <p>With a mouse, the keys act where the mouse is, so keep it over the table. The buttons
+        (shown on phones and tablets) work the other way round: tap the button, then tap the table.</p>
+
+      <h3>3. Fine-tune</h3>
+      <ul>
+        <li>Click a zone to show its points. Drag a point to move it, or click it and nudge it with the
+          arrow keys (<kbd>Shift</kbd> for bigger steps).</li>
+        <li>Click a zone's edge to add a point there; drag an edge to slide that side.</li>
+        <li>Double-click a point, or select it and press <kbd>Delete</kbd>, to remove it.</li>
+        <li>Drag the target ring, or the points of a movement path. Bounces stay on the rails.</li>
+      </ul>
+
+      <h3>4. Lines</h3>
+      <p>Switch to <b>Lines</b> (<kbd>L</kbd>) to draw free lines: drag across the table, or click the
+        start and then the end. Click a line to move it, drag its ends, or change its color, width and
+        arrow. <b>Balls</b> (<kbd>B</kbd>) goes back.</p>
+
+      <h3>Showing and saving</h3>
+      <ul>
+        <li>The Show checkboxes under the tray hide pocket lines (<kbd>P</kbd>), targets, zones or
+          movement.</li>
+        <li><b>Save image</b> downloads a PNG of the table.</li>
+        <li>Your board saves itself in this browser. <b>Undo</b> (<kbd>Ctrl</kbd>+<kbd>Z</kbd>) and
+          <b>Redo</b> (<kbd>Ctrl</kbd>+<kbd>Y</kbd>) cover every change, even Clear table.</li>
+      </ul>
+
+      <h3>On a phone</h3>
+      <ul>
+        <li>Held upright, the table stands on end so it's bigger. Turn the phone sideways for the usual view.</li>
+        <li>Use the buttons above the table for Set zone, Widen, Movement and the rest.</li>
+        <li>Double-tap a ball or a point to remove it, or select it and tap <b>Delete</b>.</li>
+      </ul>
+
+      <h3>Keys</h3>
+      <table class="keys">
+        <tr><td><kbd>Z</kbd></td><td>Set zone</td><td><kbd>B</kbd></td><td>Balls mode</td></tr>
+        <tr><td><kbd>W</kbd></td><td>Widen</td><td><kbd>L</kbd></td><td>Lines mode</td></tr>
+        <tr><td><kbd>M</kbd></td><td>Movement</td><td><kbd>P</kbd></td><td>Pocket lines on/off</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Draw zone by hand</td><td><kbd>Esc</kbd></td><td>Cancel, then deselect</td></tr>
+        <tr><td><kbd>Delete</kbd></td><td>Remove the selection</td><td><kbd>Enter</kbd></td><td>Close a drawn zone</td></tr>
+        <tr><td><kbd>Arrows</kbd></td><td>Nudge a point or target</td><td><kbd>Backspace</kbd></td><td>Take back the last corner or bounce</td></tr>
+        <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Redo</td></tr>
+        <tr><td><kbd>F1</kbd></td><td>This help</td><td></td><td></td></tr>
+      </table>
+    </div>
+  </dialog>
 
   <div id="drag-ghost" class="drag-ghost" hidden></div>
   <script src="app.js"></script>

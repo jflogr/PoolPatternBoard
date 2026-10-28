@@ -18,7 +18,29 @@ its own board.
 ## Using it
 
 The table is to scale: a 9 ft table's 100 x 50 in playing surface with 2.25 in
-balls.
+balls. **Help** (or F1) in the app explains everything below.
+
+### Sharing a layout
+
+**Share layout** makes a link holding only the balls' positions, with no
+pockets, zones or lines, so everyone who opens it can plan the same rack their
+own way. On a phone it opens the share sheet; elsewhere it copies the link.
+Opening a link asks before replacing a table that already has something on it,
+and Undo brings the old table back.
+
+A shared layout opens with the balls **locked**: they can still be selected and
+planned, but not dragged, added or removed, so nothing moves by accident.
+**🔒 Balls locked**, next to the Balls/Lines switch, unlocks them, and
+**🔓 Lock balls** locks any layout.
+
+### Phones and tablets
+
+The app works by touch. Tap a tray ball, then tap the table to place it.
+Buttons above the table do what the keys do: tap **Set zone**, **Widen**,
+**Movement** or **Draw zone**, then tap the table. **Delete**, **Done**,
+**Undo corner/bounce** and **Cancel** cover the rest. Held upright, a phone
+shows the table on end so it's bigger; the buttons and the tray stay on screen
+around it.
 
 There are two modes: **Balls** (B) for each ball's pocket and target zones, and
 **Lines** (L) for free lines. Each mode only picks up its own things.

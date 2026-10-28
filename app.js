@@ -59,7 +59,17 @@ const NUDGE_LARGE = 1;
 const DRAG_THRESHOLD_PX = 3;
 const DOUBLE_CLICK_MS = 350;
 
+// Phones held upright get the table stood on end: the world group turns it a
+// quarter turn so the head rail is at the top.
+const LANDSCAPE_VIEW = "-7 -7 114 64";
+const PORTRAIT_VIEW = "-7 -7 64 114";
+const PORTRAIT_TRANSFORM = `matrix(0 1 -1 0 ${CLOTH_HEIGHT} 0)`;
+const portraitQuery = matchMedia( "(orientation: portrait) and (max-width: 760px)" );
+// fingers need bigger grips than a mouse
+const coarseQuery = matchMedia( "(pointer: coarse)" );
+
 const svg = document.getElementById( "board" );
+const world = document.getElementById( "world" );
 const layers = {
   table: document.getElementById( "layer-table" ),
   regions: document.getElementById( "layer-regions" ),
@@ -86,6 +96,8 @@ const ui = {
   point: null, // { region, index } of the selected shape point
   draft: null, // a good shape or line being drawn
   cursor: null, // last pointer position in board coordinates
+  placing: null, // a tray ball tapped, waiting for a tap on the table
+  portrait: false, // the table is drawn on end
   message: ""
 };
 let drag = null;
@@ -116,15 +128,26 @@ const isOnTable = p => p.x >= -EDGE && p.x <= CLOTH_WIDTH + EDGE && p.y >= -EDGE
 const isOnCloth = p => Boolean( p ) && p.x >= 0 && p.x <= CLOTH_WIDTH && p.y >= 0 && p.y <= CLOTH_HEIGHT;
 
 function toBoard( event ) {
-  const matrix = svg.getScreenCTM();
+  const matrix = world.getScreenCTM();
   if ( !matrix ) return { x: 0, y: 0 };
   const point = new DOMPoint( event.clientX, event.clientY ).matrixTransform( matrix.inverse() );
   return { x: point.x, y: point.y };
 }
 
 function pixels( count ) {
-  const matrix = svg.getScreenCTM();
-  return matrix ? count / matrix.a : count / 10;
+  const matrix = world.getScreenCTM();
+  return matrix ? count / Math.hypot( matrix.a, matrix.b ) : count / 10;
+}
+
+// Screen pixels for a grip: a bit over double for a finger.
+const grip = count => pixels( coarseQuery.matches ? count * 2.2 : count );
+
+function applyOrientation( portrait = portraitQuery.matches ) {
+  ui.portrait = portrait;
+  svg.setAttribute( "viewBox", ui.portrait ? PORTRAIT_VIEW : LANDSCAPE_VIEW );
+  if ( ui.portrait ) world.setAttribute( "transform", PORTRAIT_TRANSFORM );
+  else world.removeAttribute( "transform" );
+  svg.classList.toggle( "portrait", ui.portrait );
 }
 
 function findRegion( id ) { return board.regions.find( region => region.id === id ); }
@@ -174,7 +197,8 @@ function outwardNormal( points, a, b ) {
 
 // ---------- persistence ----------
 
-function emptyBoard() { return { balls: {}, regions: [], lines: [] }; }
+// locked: the balls stay where they are, so planning can't knock them about
+function emptyBoard() { return { balls: {}, regions: [], lines: [], locked: false }; }
 
 function validPoint( p ) { return p && Number.isFinite( p.x ) && Number.isFinite( p.y ); }
 
@@ -202,6 +226,7 @@ function loadBoard() {
       region.points.length >= 3 && region.points.every( validPoint ) );
     result.lines = ( parsed.lines ?? [] ).filter( line =>
       validPoint( line.a ) && validPoint( line.b ) && typeof line.color === "string" );
+    result.locked = parsed.locked === true;
     return result;
   } catch {
     return emptyBoard();
@@ -257,7 +282,10 @@ function pushUndo() {
 function restore( from, to ) {
   if ( !from.length ) return;
   to.push( JSON.stringify( board ) );
+  // the lock is a setting, not an edit: undo leaves it as it is
+  const locked = board.locked;
   board = JSON.parse( from.pop() );
+  board.locked = locked;
   ui.draft = null;
   drag = null;
   ui.tool = "select";
@@ -374,7 +402,7 @@ function lineMarkup( line, hit = true ) {
   let markup = `<line class="line-visual" x1="${round( line.a.x )}" y1="${round( line.a.y )}" x2="${round( end.x )}" y2="${round( end.y )}" stroke="${line.color}" stroke-width="${width}"/>`;
   if ( head ) markup += `<polygon class="line-visual" points="${head}" fill="${line.color}"/>`;
   if ( hit ) {
-    markup += `<line class="line-hit" data-hit="line" data-id="${line.id}" x1="${line.a.x}" y1="${line.a.y}" x2="${line.b.x}" y2="${line.b.y}" stroke-width="${Math.max( 2, pixels( 14 ) )}"/>`;
+    markup += `<line class="line-hit" data-hit="line" data-id="${line.id}" x1="${line.a.x}" y1="${line.a.y}" x2="${line.b.x}" y2="${line.b.y}" stroke-width="${Math.max( 2, grip( 14 ) )}"/>`;
   }
   return markup;
 }
@@ -471,7 +499,7 @@ function pathMarkup( id, start, points, hit = true ) {
     markup += `<circle class="path-visual" cx="${round( last.x )}" cy="${round( last.y )}" r="${BALL_RADIUS - width / 2}" fill="none" stroke="${color}" stroke-width="${width}"/>`;
   }
   if ( hit ) {
-    markup += `<polyline class="line-hit" data-hit="path" data-id="${id}" points="${pointsAttr( route )}" stroke-width="${Math.max( 1.5, pixels( 12 ) )}"/>`;
+    markup += `<polyline class="line-hit" data-hit="path" data-id="${id}" points="${pointsAttr( route )}" stroke-width="${Math.max( 1.5, grip( 12 ) )}"/>`;
   }
   return markup;
 }
@@ -514,7 +542,11 @@ function render() {
     const ring = id === ballId || isSelected( "ball", id )
       ? `<circle class="selected-ring${id === ballId ? " current" : ""}" r="${BALL_RADIUS + 0.5}"/>`
       : "";
-    return `<g class="${offTable}" data-hit="ball" data-id="${id}" transform="translate(${round( ball.x )} ${round( ball.y )})">${ballMarkup( id )}${ring}</g>`;
+    // on end, the ball turns back so its number stays upright
+    const turn = ui.portrait ? " rotate(-90)" : "";
+    const reach = grip( 9 );
+    const fingerHit = reach > BALL_RADIUS ? `<circle r="${round( reach )}" fill="transparent"/>` : "";
+    return `<g class="${offTable}" data-hit="ball" data-id="${id}" transform="translate(${round( ball.x )} ${round( ball.y )})${turn}">${fingerHit}${ballMarkup( id )}${ring}</g>`;
   } ).join( "" );
 
   layers.handles.innerHTML = handlesMarkup();
@@ -526,8 +558,16 @@ function render() {
 
 // Points and edge grips for the selected shape: the edges take clicks (add a
 // point) and drags (shift that side), the points take drags and nudges.
+// A grip point: the dot you see, over a wider invisible target for a finger.
+function handleMarkup( hitAttributes, p, extraClass = "" ) {
+  const at = `cx="${round( p.x )}" cy="${round( p.y )}"`;
+  const reach = grip( 12 );
+  const radius = pixels( coarseQuery.matches ? 8 : 6 );
+  const fingerHit = reach > radius * 1.5 ? `<circle class="handle-hit" ${hitAttributes} ${at} r="${reach}"/>` : "";
+  return `${fingerHit}<circle class="handle${extraClass}" ${hitAttributes} ${at} r="${radius}"/>`;
+}
+
 function handlesMarkup() {
-  const radius = pixels( 6 );
   const selection = ui.selection;
   if ( selection?.type === "region" ) {
     const region = findRegion( selection.id );
@@ -536,11 +576,11 @@ function handlesMarkup() {
     const edges = points.map( ( a, index ) => {
       const b = points[( index + 1 ) % points.length];
       return `<line class="edge-hit" data-hit="edge" data-id="${region.id}" data-index="${index}" ` +
-        `x1="${round( a.x )}" y1="${round( a.y )}" x2="${round( b.x )}" y2="${round( b.y )}" stroke-width="${pixels( 12 )}"/>`;
+        `x1="${round( a.x )}" y1="${round( a.y )}" x2="${round( b.x )}" y2="${round( b.y )}" stroke-width="${grip( 12 )}"/>`;
     } ).join( "" );
     const handles = points.map( ( p, index ) => {
       const chosen = ui.point?.region === region.id && ui.point.index === index ? " chosen" : "";
-      return `<circle class="handle${chosen}" data-hit="vertex" data-id="${region.id}" data-index="${index}" cx="${round( p.x )}" cy="${round( p.y )}" r="${radius}"/>`;
+      return handleMarkup( `data-hit="vertex" data-id="${region.id}" data-index="${index}"`, p, chosen );
     } ).join( "" );
     return edges + handles;
   }
@@ -548,13 +588,13 @@ function handlesMarkup() {
     const path = board.balls[selection.id]?.path;
     if ( !path || !settings.show.path ) return "";
     return path.map( ( p, index ) =>
-      `<circle class="handle" data-hit="path-point" data-id="${selection.id}" data-index="${index}" cx="${round( p.x )}" cy="${round( p.y )}" r="${radius}"/>` ).join( "" );
+      handleMarkup( `data-hit="path-point" data-id="${selection.id}" data-index="${index}"`, p ) ).join( "" );
   }
   if ( selection?.type === "line" ) {
     const line = findLine( selection.id );
     if ( !line ) return "";
     return ["a", "b"].map( end =>
-      `<circle class="handle" data-hit="line-end" data-id="${line.id}" data-end="${end}" cx="${round( line[end].x )}" cy="${round( line[end].y )}" r="${radius}"/>` ).join( "" );
+      handleMarkup( `data-hit="line-end" data-id="${line.id}" data-end="${end}"`, line[end] ) ).join( "" );
   }
   return "";
 }
@@ -601,7 +641,7 @@ function renderTray() {
   tray.innerHTML = BALL_IDS.map( id => {
     const classes = ["tray-ball"];
     if ( board.balls[id] ) classes.push( "placed" );
-    if ( id === ballId ) classes.push( "selected" );
+    if ( id === ballId || id === ui.placing ) classes.push( "selected" );
     const title = board.balls[id] ? `${ballName( id )} is on the table: click to select it` : `Drag the ${ballName( id )} onto the table`;
     return `<button type="button" class="${classes.join( " " )}" data-ball="${id}" title="${title}" aria-label="${ballName( id )}">` +
       `<svg viewBox="-1.25 -1.25 2.5 2.5">${ballMarkup( id )}</svg></button>`;
@@ -618,6 +658,7 @@ function renderControls() {
   document.getElementById( "hotkeys" ).innerHTML = ui.mode === "ball"
     ? "With the mouse on the table: <kbd>Z</kbd> set zone · <kbd>W</kbd> widen · <kbd>M</kbd> movement · <kbd>G</kbd> draw a zone by hand · click a pocket for the pocket line"
     : "Drag to draw a line, or click its start then its end · click a line to edit it";
+  renderActions();
 
   const ball = ballId ? board.balls[ballId] : null;
   const hasOk = Boolean( ballId && regionFor( ballId, "ok" ) );
@@ -650,6 +691,14 @@ function renderControls() {
   const activeWidth = selectedLine ? ( LINE_WIDTHS[selectedLine.width] ? selectedLine.width : "medium" ) : settings.lineWidth;
   for ( const button of document.querySelectorAll( "[data-width]" ) ) button.classList.toggle( "active", button.dataset.width === activeWidth );
 
+  const lockButton = document.getElementById( "lock-balls" );
+  lockButton.classList.toggle( "active", board.locked );
+  lockButton.setAttribute( "aria-pressed", String( board.locked ) );
+  lockButton.innerHTML = board.locked ? "🔒 Balls locked" : "🔓 Lock balls";
+  lockButton.title = board.locked
+    ? "The balls can't be moved, added or removed. Click to unlock them."
+    : "Lock the balls in place so planning can't move them by accident";
+  svg.classList.toggle( "balls-locked", board.locked );
   document.getElementById( "undo" ).disabled = !undoStack.length;
   document.getElementById( "redo" ).disabled = !redoStack.length;
   document.getElementById( "show-pocket-lines" ).checked = settings.pocketLines;
@@ -658,9 +707,44 @@ function renderControls() {
   statusText.textContent = ui.message || hint();
 }
 
+// The keys as buttons, for touch screens: a tool button arms the tool and the
+// next tap on the table does it.
+const TOOL_BUTTONS = [
+  { tool: "hand", label: "Set zone", key: "Z" },
+  { tool: "widen", label: "Widen", key: "W" },
+  { tool: "path", label: "Movement", key: "M" },
+  { tool: "good", label: "Draw zone", key: "G" }
+];
+
+function renderActions() {
+  const draft = ui.draft;
+  const button = ( action, label, { active = false, disabled = false, title = "" } = {} ) =>
+    `<button type="button" data-action="${action}"${active ? ` class="active"` : ""}${disabled ? " disabled" : ""}${title ? ` title="${title}"` : ""}>${label}</button>`;
+  const parts = [];
+  if ( ui.mode === "ball" ) {
+    const hasBall = Boolean( currentBall() );
+    parts.push( TOOL_BUTTONS.map( item => button( `tool-${item.tool}`, item.label,
+      { active: ui.tool === item.tool, disabled: !hasBall, title: `${item.label} (${item.key})` } ) ).join( "" ) );
+    if ( draft?.type === "region" ) {
+      parts.push( button( "finish", "Done", { disabled: draft.points.length < 3, title: "Close the zone (Enter)" } ) );
+    }
+    if ( draft?.type === "region" || draft?.type === "path" ) {
+      parts.push( button( "back", draft.type === "path" ? "Undo bounce" : "Undo corner", { disabled: !draft.points.length, title: "Backspace" } ) );
+    }
+  }
+  const isBusy = Boolean( draft || ui.placing || ( ui.mode === "ball" && ui.tool !== "select" ) );
+  const hasSelection = Boolean( ui.point || ui.selection );
+  if ( !isBusy ) parts.push( button( "delete", "Delete", { disabled: !hasSelection, title: "Remove the selected item (Delete)" } ) );
+  parts.push( isBusy
+    ? button( "escape", "Cancel", { title: "Esc" } )
+    : button( "escape", "Deselect", { disabled: !hasSelection && !currentBall(), title: "Esc" } ) );
+  document.getElementById( "actions" ).innerHTML = parts.join( `<span class="actions-gap"></span>` );
+}
+
 function hint() {
   const ballId = currentBall();
   const draft = ui.draft;
+  if ( ui.placing ) return `Tap the table where the ${ballName( ui.placing )} goes.`;
   if ( draft?.type === "region" ) {
     return draft.points.length < 3
       ? `Good shape for the ${ballName( draft.ball )}: click each corner on the cloth. Esc cancels.`
@@ -693,7 +777,7 @@ function hint() {
   if ( ballId ) {
     return `${ballName( ballId )} selected. Click a pocket for its pocket line. With the mouse on the table, Z sets its zone, W widens it toward the mouse, and M draws the cue ball's movement.`;
   }
-  if ( !Object.keys( board.balls ).length ) return "Drag balls from the tray onto the table.";
+  if ( !Object.keys( board.balls ).length ) return "Drag balls from the tray onto the table, or tap one and then tap the table. Help (F1) explains the rest.";
   return "Click a ball to select it.";
 }
 
@@ -704,6 +788,7 @@ function setMode( mode ) {
   ui.tool = "select";
   ui.draft = null;
   ui.point = null;
+  ui.placing = null;
   ui.message = "";
   if ( ( ui.selection?.type === "line" ) !== ( mode === "line" ) ) ui.selection = null;
   render();
@@ -712,6 +797,7 @@ function setMode( mode ) {
 function setTool( tool ) {
   ui.message = "";
   ui.draft = null;
+  ui.placing = null;
   if ( ui.mode !== "ball" ) {
     ui.mode = "ball";
     if ( ui.selection?.type === "line" ) ui.selection = null;
@@ -909,7 +995,17 @@ function commitLine( a, b ) {
   render();
 }
 
+const LOCKED_MESSAGE = "The balls are locked. Unlock them (the button by Balls and Lines) to move, add or remove them.";
+
+function isLockedOut() {
+  if ( !board.locked ) return false;
+  ui.message = LOCKED_MESSAGE;
+  render();
+  return true;
+}
+
 function removeBall( id ) {
+  if ( isLockedOut() ) return;
   pushUndo();
   delete board.balls[id];
   board.regions = board.regions.filter( region => region.ball !== id );
@@ -1016,6 +1112,11 @@ svg.addEventListener( "pointerdown", event => {
   ui.cursor = p;
   const isDouble = isDoubleDown( event );
 
+  if ( ui.placing ) {
+    if ( isOnTable( p ) ) placeBall( ui.placing, p );
+    return;
+  }
+
   if ( ui.draft?.type === "region" ) {
     regionDraftClick( p, isDouble );
     return;
@@ -1062,7 +1163,10 @@ svg.addEventListener( "pointerdown", event => {
       }
       setBall( id );
       ui.selection = { type: "ball", id };
-      startDrag( { type: "ball", id, start: p, origin: { x: board.balls[id].x, y: board.balls[id].y } } );
+      // a locked ball still selects; dragging it only says why it won't move
+      startDrag( board.locked
+        ? { type: "locked-ball", start: p }
+        : { type: "ball", id, start: p, origin: { x: board.balls[id].x, y: board.balls[id].y } } );
       break;
     case "path":
       setBall( id );
@@ -1122,6 +1226,7 @@ function shiftPoints( origin, dx, dy ) {
 
 window.addEventListener( "pointermove", event => {
   if ( drag?.type === "tray" ) {
+    if ( Math.hypot( event.clientX - drag.startX, event.clientY - drag.startY ) > DRAG_THRESHOLD_PX * 2 ) drag.moved = true;
     moveGhost( event );
     return;
   }
@@ -1134,8 +1239,14 @@ window.addEventListener( "pointermove", event => {
   if ( !drag.moved ) {
     if ( distance( p, drag.start ) < pixels( DRAG_THRESHOLD_PX ) ) return;
     drag.moved = true;
+    if ( drag.type === "locked-ball" ) {
+      ui.message = LOCKED_MESSAGE;
+      renderControls();
+      return;
+    }
     if ( drag.type !== "line-draft" ) pushUndo();
   }
+  if ( drag.type === "locked-ball" ) return;
   const dx = p.x - drag.start.x;
   const dy = p.y - drag.start.y;
   switch ( drag.type ) {
@@ -1191,11 +1302,11 @@ function endDrag( event, cancelled ) {
     ghost.hidden = true;
     const p = toBoard( event );
     if ( !cancelled && isOnTable( p ) ) {
-      pushUndo();
-      board.balls[finished.id] = { ...clampToCloth( p, BALL_RADIUS ), pocket: null, hand: null };
-      setBall( finished.id );
-      ui.selection = { type: "ball", id: finished.id };
+      placeBall( finished.id, p );
+      return;
     }
+    // a tap rather than a drag: the next tap on the table places it
+    if ( !cancelled && !finished.moved ) ui.placing = finished.id;
   } else if ( finished.type === "edge" && !finished.moved && !cancelled ) {
     // a click on an edge, not a drag: add a point there
     insertPoint( finished.id, finished.index, finished.start );
@@ -1225,6 +1336,15 @@ window.addEventListener( "pointercancel", event => endDrag( event, true ) );
 
 // ---------- tray ----------
 
+function placeBall( id, p ) {
+  pushUndo();
+  board.balls[id] = { ...clampToCloth( p, BALL_RADIUS ), pocket: null, hand: null, path: null };
+  ui.placing = null;
+  setBall( id );
+  ui.selection = { type: "ball", id };
+  render();
+}
+
 function moveGhost( event ) {
   const size = 2 * BALL_RADIUS / pixels( 1 );
   ghost.style.width = `${size}px`;
@@ -1240,18 +1360,27 @@ tray.addEventListener( "pointerdown", event => {
   ui.message = "";
   if ( ui.mode !== "ball" ) setMode( "ball" );
   if ( board.balls[id] ) {
+    ui.placing = null;
     setBall( id );
     ui.selection = { type: "ball", id };
     ui.point = null;
     render();
     return;
   }
+  if ( isLockedOut() ) return;
+  // tapping the ball already waiting to be placed puts it down again
+  const wasPlacing = ui.placing === id;
+  ui.placing = null;
   ui.draft = null;
   ui.tool = "select";
+  if ( wasPlacing ) {
+    render();
+    return;
+  }
   ghost.innerHTML = `<svg viewBox="-1.25 -1.25 2.5 2.5">${ballMarkup( id )}</svg>`;
   ghost.hidden = false;
   moveGhost( event );
-  drag = { type: "tray", id };
+  drag = { type: "tray", id, startX: event.clientX, startY: event.clientY, moved: false };
 } );
 
 // ---------- toolbar ----------
@@ -1346,13 +1475,16 @@ async function saveImage() {
   ui.selection = null;
   ui.point = null;
   ui.draft = null;
+  // the picture is always the table lying flat, however the screen shows it
+  applyOrientation( false );
   render();
   const copy = svg.cloneNode( true );
   Object.assign( ui, kept );
+  applyOrientation();
   render();
 
-  copy.querySelectorAll( ".line-hit, .edge-hit, .pocket-hit, .handle, .selected-ring" ).forEach( node => node.remove() );
-  const [, , width, height] = svg.getAttribute( "viewBox" ).split( " " ).map( Number );
+  copy.querySelectorAll( ".line-hit, .edge-hit, .pocket-hit, .handle, .handle-hit, .selected-ring" ).forEach( node => node.remove() );
+  const [, , width, height] = LANDSCAPE_VIEW.split( " " ).map( Number );
   const pixelWidth = width * EXPORT_PIXELS_PER_INCH;
   const pixelHeight = height * EXPORT_PIXELS_PER_INCH;
   copy.setAttribute( "xmlns", "http://www.w3.org/2000/svg" );
@@ -1395,6 +1527,12 @@ async function saveImage() {
 }
 
 document.getElementById( "save-image" ).addEventListener( "click", saveImage );
+
+document.getElementById( "lock-balls" ).addEventListener( "click", () => {
+  board.locked = !board.locked;
+  ui.message = board.locked ? "Balls locked: they stay put while you plan." : "Balls unlocked: drag them to move them.";
+  render();
+} );
 document.getElementById( "undo" ).addEventListener( "click", undo );
 document.getElementById( "redo" ).addEventListener( "click", redo );
 
@@ -1425,11 +1563,152 @@ for ( const box of document.querySelectorAll( "[data-show]" ) ) {
   } );
 }
 
+// ---------- share layout ----------
+
+// A shared layout is the balls alone, packed into the link: per ball, its
+// number as one hex digit, then x and y in tenths of an inch as two base-36
+// digits each.
+const LAYOUT_PREFIX = "#rack=";
+
+function encodeLayout() {
+  const digits = value => Math.round( value * 10 ).toString( 36 ).padStart( 2, "0" );
+  return BALL_IDS.filter( id => board.balls[id] ).map( id => {
+    const ball = clampToCloth( board.balls[id], BALL_RADIUS );
+    return BALL_IDS.indexOf( id ).toString( 16 ) + digits( ball.x ) + digits( ball.y );
+  } ).join( "" );
+}
+
+function decodeLayout( code ) {
+  if ( !/^([0-9a-f][0-9a-z]{4})+$/.test( code ) ) return null;
+  const balls = {};
+  for ( let at = 0; at < code.length; at += 5 ) {
+    const id = BALL_IDS[parseInt( code[at], 16 )];
+    const x = parseInt( code.slice( at + 1, at + 3 ), 36 ) / 10;
+    const y = parseInt( code.slice( at + 3, at + 5 ), 36 ) / 10;
+    balls[id] = { ...clampToCloth( { x, y }, BALL_RADIUS ), pocket: null, hand: null, path: null };
+  }
+  return balls;
+}
+
+async function shareLayout() {
+  if ( !Object.keys( board.balls ).length ) {
+    ui.message = "Put some balls on the table first.";
+    render();
+    return;
+  }
+  const url = location.href.split( "#" )[0] + LAYOUT_PREFIX + encodeLayout();
+  if ( navigator.share && coarseQuery.matches ) {
+    try {
+      await navigator.share( { title: "Pool layout", text: "How would you run this rack?", url } );
+      return;
+    } catch ( error ) {
+      if ( error.name === "AbortError" ) return;
+      // no share sheet after all: copy it instead
+    }
+  }
+  try {
+    await navigator.clipboard.writeText( url );
+    ui.message = "Link copied. It holds the balls only, so whoever opens it can plan the rack their own way.";
+  } catch {
+    prompt( "Copy this link to share the layout:", url );
+  }
+  render();
+}
+
+// Opening a shared link puts its balls on the table, after asking if the
+// table already has something on it. The link is then dropped from the
+// address bar so a reload doesn't ask again.
+function openSharedLayout() {
+  if ( !location.hash.startsWith( LAYOUT_PREFIX ) ) return;
+  const balls = decodeLayout( location.hash.slice( LAYOUT_PREFIX.length ).toLowerCase() );
+  history.replaceState( null, "", location.href.split( "#" )[0] );
+  if ( !balls ) {
+    ui.message = "That link's layout couldn't be read.";
+    render();
+    return;
+  }
+  const hasWork = Object.keys( board.balls ).length || board.lines.length;
+  if ( hasWork && !confirm( "Open the shared layout? It replaces what's on your table. Undo brings your table back." ) ) return;
+  pushUndo();
+  // locked, so planning it can't knock a ball out of place
+  board = { balls, regions: [], lines: [], locked: true };
+  Object.assign( ui, { ball: null, selection: null, point: null, draft: null, placing: null, tool: "select" } );
+  setMode( "ball" );
+  ui.message = `Opened a shared layout: ${Object.keys( balls ).length} balls. Plan it your way.`;
+  render();
+}
+
+document.getElementById( "share-layout" ).addEventListener( "click", shareLayout );
+window.addEventListener( "hashchange", openSharedLayout );
+
+// ---------- help ----------
+
+const help = document.getElementById( "help" );
+
+function openHelp() {
+  if ( !help.open ) help.showModal();
+}
+
+document.getElementById( "open-help" ).addEventListener( "click", openHelp );
+document.getElementById( "close-help" ).addEventListener( "click", () => help.close() );
+// a click on the dimmed page around it closes it too
+help.addEventListener( "click", event => {
+  if ( event.target === help ) help.close();
+} );
+
 // ---------- keyboard ----------
 
 const ARROWS = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] };
 
+// Esc: drop whatever is half done, then the selected point, item and ball in turn.
+function cancelOrDeselect() {
+  if ( ui.draft || ui.placing || ( ui.mode === "ball" && ui.tool !== "select" ) ) {
+    ui.draft = null;
+    ui.placing = null;
+    ui.tool = "select";
+  } else if ( ui.point ) {
+    ui.point = null;
+  } else if ( ui.selection ) {
+    ui.selection = null;
+  } else if ( ui.mode === "ball" ) {
+    ui.ball = null;
+  }
+  ui.message = "";
+  render();
+}
+
+function takeBackDraftPoint() {
+  ui.draft.points.pop();
+  renderDraft();
+  renderControls();
+}
+
+document.getElementById( "actions" ).addEventListener( "click", event => {
+  const action = event.target.closest( "[data-action]" )?.dataset.action;
+  if ( !action ) return;
+  if ( action.startsWith( "tool-" ) ) {
+    const tool = action.slice( 5 );
+    // the armed tool's button puts it down again
+    if ( ui.tool === tool ) cancelOrDeselect();
+    else setTool( tool );
+  } else if ( action === "finish" ) {
+    finishRegion();
+  } else if ( action === "back" ) {
+    takeBackDraftPoint();
+  } else if ( action === "delete" ) {
+    deleteSelection();
+  } else if ( action === "escape" ) {
+    cancelOrDeselect();
+  }
+} );
+
 document.addEventListener( "keydown", event => {
+  if ( event.key === "F1" ) {
+    event.preventDefault();
+    openHelp();
+    return;
+  }
+  if ( help.open ) return;
   if ( event.target.matches( "input[type=text], input[type=color], select, textarea" ) ) return;
   const key = event.key.toLowerCase();
   if ( event.ctrlKey || event.metaKey ) {
@@ -1450,28 +1729,11 @@ document.addEventListener( "keydown", event => {
     const step = event.shiftKey ? NUDGE_LARGE : NUDGE;
     if ( !nudge( ARROWS[key][0] * step, ARROWS[key][1] * step ) ) return;
   } else if ( key === "escape" ) {
-    if ( draft || ( ui.mode === "ball" && ui.tool !== "select" ) ) {
-      ui.draft = null;
-      ui.tool = "select";
-    } else if ( ui.point ) {
-      ui.point = null;
-    } else if ( ui.selection ) {
-      ui.selection = null;
-    } else if ( ui.mode === "ball" ) {
-      ui.ball = null;
-    }
-    ui.message = "";
-    render();
+    cancelOrDeselect();
   } else if ( key === "enter" && draft?.type === "region" ) {
     finishRegion();
-  } else if ( key === "backspace" && draft?.type === "path" ) {
-    draft.points.pop();
-    renderDraft();
-    renderControls();
-  } else if ( key === "backspace" && draft?.type === "region" ) {
-    draft.points.pop();
-    renderDraft();
-    renderControls();
+  } else if ( key === "backspace" && ( draft?.type === "path" || draft?.type === "region" ) ) {
+    takeBackDraftPoint();
   } else if ( key === "delete" || key === "backspace" ) {
     deleteSelection();
   } else if ( key === "v" ) {
@@ -1499,8 +1761,13 @@ document.addEventListener( "keydown", event => {
   event.preventDefault();
 } );
 
-window.addEventListener( "resize", render );
+window.addEventListener( "resize", () => {
+  applyOrientation();
+  render();
+} );
 
+applyOrientation();
 renderDefs();
 renderTable();
 render();
+openSharedLayout();
