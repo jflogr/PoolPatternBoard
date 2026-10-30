@@ -97,6 +97,7 @@ const ui = {
   draft: null, // a good shape or line being drawn
   cursor: null, // last pointer position in board coordinates
   placing: null, // a tray ball tapped, waiting for a tap on the table
+  view: { scale: 1, cx: null, cy: null }, // zoom: see applyView
   portrait: false, // the table is drawn on end
   message: ""
 };
@@ -142,12 +143,59 @@ function pixels( count ) {
 // Screen pixels for a grip: a bit over double for a finger.
 const grip = count => pixels( coarseQuery.matches ? count * 2.2 : count );
 
-function applyOrientation( portrait = portraitQuery.matches ) {
+// zoomed: false draws the whole table whatever the zoom (for Save image)
+function applyOrientation( portrait = portraitQuery.matches, zoomed = true ) {
   ui.portrait = portrait;
-  svg.setAttribute( "viewBox", ui.portrait ? PORTRAIT_VIEW : LANDSCAPE_VIEW );
   if ( ui.portrait ) world.setAttribute( "transform", PORTRAIT_TRANSFORM );
   else world.removeAttribute( "transform" );
   svg.classList.toggle( "portrait", ui.portrait );
+  applyView( zoomed );
+}
+
+// ---------- zoom ----------
+
+// The view is a zoom factor and the middle of what's shown, in the svg's own
+// coordinates (the table on end when it's on end).
+const MAX_ZOOM = 6;
+const fitButton = document.getElementById( "zoom-fit" );
+
+const baseView = () => ( ui.portrait ? PORTRAIT_VIEW : LANDSCAPE_VIEW ).split( " " ).map( Number );
+
+function resetView() {
+  ui.view = { scale: 1, cx: null, cy: null };
+}
+
+function applyView( zoomed = true ) {
+  const [x, y, width, height] = baseView();
+  const view = ui.view;
+  const scale = zoomed ? view.scale : 1;
+  const shownWidth = width / scale;
+  const shownHeight = height / scale;
+  // keep the view on the table
+  view.cx = clamp( view.cx ?? x + width / 2, x + shownWidth / 2, x + width - shownWidth / 2 );
+  view.cy = clamp( view.cy ?? y + height / 2, y + shownHeight / 2, y + height - shownHeight / 2 );
+  const cx = zoomed ? view.cx : x + width / 2;
+  const cy = zoomed ? view.cy : y + height / 2;
+  const fixed = value => value.toFixed( 3 );
+  svg.setAttribute( "viewBox", `${fixed( cx - shownWidth / 2 )} ${fixed( cy - shownHeight / 2 )} ${fixed( shownWidth )} ${fixed( shownHeight )}` );
+  fitButton.hidden = !zoomed || view.scale <= 1.01;
+}
+
+// A screen point in the svg's coordinates.
+function svgPoint( screen ) {
+  const matrix = svg.getScreenCTM();
+  return matrix ? new DOMPoint( screen.x, screen.y ).matrixTransform( matrix.inverse() ) : new DOMPoint( 0, 0 );
+}
+
+// Zoom to scale, keeping the svg point anchor under the screen point screen.
+function zoomAround( scale, anchor, screen ) {
+  ui.view.scale = clamp( scale, 1, MAX_ZOOM );
+  applyView();
+  const under = svgPoint( screen );
+  ui.view.cx += anchor.x - under.x;
+  ui.view.cy += anchor.y - under.y;
+  applyView();
+  render();
 }
 
 function findRegion( id ) { return board.regions.find( region => region.id === id ); }
@@ -694,7 +742,10 @@ function renderControls() {
   const lockButton = document.getElementById( "lock-balls" );
   lockButton.classList.toggle( "active", board.locked );
   lockButton.setAttribute( "aria-pressed", String( board.locked ) );
-  lockButton.innerHTML = board.locked ? "🔒 Balls locked" : "🔓 Lock balls";
+  lockButton.innerHTML = board.locked
+    ? `<span aria-hidden="true">🔒</span><span class="lock-text"> Balls locked</span>`
+    : `<span aria-hidden="true">🔓</span><span class="lock-text"> Lock balls</span>`;
+  lockButton.setAttribute( "aria-label", board.locked ? "Balls locked" : "Lock balls" );
   lockButton.title = board.locked
     ? "The balls can't be moved, added or removed. Click to unlock them."
     : "Lock the balls in place so planning can't move them by accident";
@@ -704,7 +755,7 @@ function renderControls() {
   document.getElementById( "show-pocket-lines" ).checked = settings.pocketLines;
   for ( const box of document.querySelectorAll( "[data-show]" ) ) box.checked = settings.show[box.dataset.show];
 
-  statusText.textContent = ui.message || hint();
+  statusText.textContent = touchWords( ui.message || hint() );
 }
 
 // The keys as buttons, for touch screens: a tool button arms the tool and the
@@ -739,6 +790,33 @@ function renderActions() {
     ? button( "escape", "Cancel", { title: "Esc" } )
     : button( "escape", "Deselect", { disabled: !hasSelection && !currentBall(), title: "Esc" } ) );
   document.getElementById( "actions" ).innerHTML = parts.join( `<span class="actions-gap"></span>` );
+}
+
+// The hints are written for a mouse and keys; on a touch screen the buttons
+// stand in for the keys.
+const TOUCH_WORDS = [
+  [/Esc cancels\./g, "Cancel stops."],
+  [/Backspace removes the last bounce, /g, "Undo bounce takes one back. "],
+  [/then click the first corner, double-click or press Enter to close it\. Backspace removes the last corner\./g,
+    "then tap the first corner or Done to close it."],
+  [/, or nudge it with the arrow keys \(Shift for bigger steps\)/g, ""],
+  [/ or nudge it with the arrow keys/g, ""],
+  [/ W with the mouse outside it widens the OK shape\./g, " Widen, then a tap outside it, grows the OK shape."],
+  [/Press M to draw it again/g, "Movement draws it again"],
+  [/Press Z over the table to set the zone again/g, "Set zone puts it somewhere else"],
+  [/With the mouse on the table, Z sets its zone, W widens it toward the mouse, and M draws the cue ball's movement\./g,
+    "Tap Set zone, Widen or Movement, then tap the table."],
+  [/press Z with the mouse where the cue ball should end up/g, "tap Set zone, then where the cue ball should end up"],
+  [/ B goes back to the balls\./g, ""],
+  [/Help \(F1\)/g, "Help (in ☰)"],
+  [/double-click/g, "double-tap"],
+  [/\bClick\b/g, "Tap"],
+  [/\bclick\b/g, "tap"]
+];
+
+function touchWords( text ) {
+  if ( !document.body.classList.contains( "phone" ) ) return text;
+  return TOUCH_WORDS.reduce( ( result, [pattern, words] ) => result.replace( pattern, words ), text );
 }
 
 function hint() {
@@ -1104,8 +1182,55 @@ function startDrag( details ) {
   render();
 }
 
+// ---------- pinch ----------
+
+// Two fingers on the table zoom and move it. The first finger has already
+// acted by the time the second lands, so that is taken back.
+const touches = new Map();
+let pinch = null;
+let touchStart = null; // undo depth and ui when the first finger landed
+
+const UI_TAKEN_BACK = ["mode", "tool", "ball", "selection", "point", "draft", "placing", "message"];
+
+function beginPinch() {
+  drag = null;
+  if ( touchStart ) {
+    while ( undoStack.length > touchStart.undoLength ) {
+      restore( undoStack, redoStack );
+      redoStack.pop();
+    }
+    Object.assign( ui, JSON.parse( touchStart.ui ) );
+  }
+  const [a, b] = [...touches.values()];
+  const middle = { x: ( a.x + b.x ) / 2, y: ( a.y + b.y ) / 2 };
+  pinch = { distance: Math.hypot( a.x - b.x, a.y - b.y ) || 1, scale: ui.view.scale, anchor: svgPoint( middle ) };
+  render();
+}
+
+function pinchMove() {
+  const [a, b] = [...touches.values()];
+  const middle = { x: ( a.x + b.x ) / 2, y: ( a.y + b.y ) / 2 };
+  zoomAround( pinch.scale * Math.hypot( a.x - b.x, a.y - b.y ) / pinch.distance, pinch.anchor, middle );
+}
+
+// true when the lifted finger was part of a pinch
+function releaseTouch( event ) {
+  if ( !touches.delete( event.pointerId ) || !pinch ) return false;
+  if ( touches.size < 2 ) pinch = null;
+  return true;
+}
+
 svg.addEventListener( "pointerdown", event => {
-  if ( event.button !== 0 ) return;
+  if ( event.pointerType === "touch" ) {
+    touches.set( event.pointerId, { x: event.clientX, y: event.clientY } );
+    if ( touches.size >= 2 ) {
+      event.preventDefault();
+      if ( !pinch ) beginPinch();
+      return;
+    }
+    touchStart = { undoLength: undoStack.length, ui: JSON.stringify( Object.fromEntries( UI_TAKEN_BACK.map( key => [key, ui[key]] ) ) ) };
+  }
+  if ( pinch || event.button !== 0 ) return;
   event.preventDefault();
   ui.message = "";
   const p = toBoard( event );
@@ -1225,6 +1350,13 @@ function shiftPoints( origin, dx, dy ) {
 }
 
 window.addEventListener( "pointermove", event => {
+  if ( touches.has( event.pointerId ) ) {
+    touches.set( event.pointerId, { x: event.clientX, y: event.clientY } );
+    if ( pinch ) {
+      if ( touches.size >= 2 ) pinchMove();
+      return;
+    }
+  }
   if ( drag?.type === "tray" ) {
     if ( Math.hypot( event.clientX - drag.startX, event.clientY - drag.startY ) > DRAG_THRESHOLD_PX * 2 ) drag.moved = true;
     moveGhost( event );
@@ -1331,8 +1463,26 @@ function endDrag( event, cancelled ) {
   render();
 }
 
-window.addEventListener( "pointerup", event => endDrag( event, false ) );
-window.addEventListener( "pointercancel", event => endDrag( event, true ) );
+window.addEventListener( "pointerup", event => {
+  if ( !releaseTouch( event ) ) endDrag( event, false );
+} );
+window.addEventListener( "pointercancel", event => {
+  if ( !releaseTouch( event ) ) endDrag( event, true );
+} );
+
+// Ctrl+wheel, and a trackpad pinch, zoom about the mouse.
+svg.addEventListener( "wheel", event => {
+  if ( !event.ctrlKey ) return;
+  event.preventDefault();
+  const screen = { x: event.clientX, y: event.clientY };
+  zoomAround( ui.view.scale * Math.exp( -event.deltaY * 0.01 ), svgPoint( screen ), screen );
+}, { passive: false } );
+
+fitButton.addEventListener( "click", () => {
+  resetView();
+  applyView();
+  render();
+} );
 
 // ---------- tray ----------
 
@@ -1476,7 +1626,7 @@ async function saveImage() {
   ui.point = null;
   ui.draft = null;
   // the picture is always the table lying flat, however the screen shows it
-  applyOrientation( false );
+  applyOrientation( false, false );
   render();
   const copy = svg.cloneNode( true );
   Object.assign( ui, kept );
@@ -1761,11 +1911,49 @@ document.addEventListener( "keydown", event => {
   event.preventDefault();
 } );
 
+// ---------- phone layout ----------
+
+// On a touch screen the app fills the screen without scrolling, and the
+// buttons used now and then move into the More menu.
+const moreMenu = document.getElementById( "more-menu" );
+const moreBody = document.getElementById( "more-body" );
+const MENU_ITEMS = [...["share-layout", "save-image", "clear-board", "open-help"].map( id => document.getElementById( id ) ),
+  document.querySelector( ".view-options" )];
+const menuHomes = new Map( MENU_ITEMS.map( element => [element, { parent: element.parentNode, next: element.nextSibling }] ) );
+
+function applyPhoneLayout() {
+  const isPhone = coarseQuery.matches;
+  document.body.classList.toggle( "phone", isPhone );
+  for ( const element of MENU_ITEMS ) {
+    if ( isPhone ) {
+      moreBody.append( element );
+    } else {
+      const home = menuHomes.get( element );
+      home.parent.insertBefore( element, home.next );
+    }
+  }
+  if ( !isPhone && moreMenu.open ) moreMenu.close();
+}
+
+document.getElementById( "open-more" ).addEventListener( "click", () => moreMenu.showModal() );
+document.getElementById( "close-more" ).addEventListener( "click", () => moreMenu.close() );
+moreMenu.addEventListener( "click", event => {
+  // a button in the menu does its job and closes it; the Show boxes leave it open
+  if ( event.target === moreMenu || event.target.closest( "#more-body > button" ) ) moreMenu.close();
+} );
+coarseQuery.addEventListener( "change", () => {
+  applyPhoneLayout();
+  render();
+} );
+
 window.addEventListener( "resize", () => {
+  // turning the phone starts the zoom afresh
+  if ( portraitQuery.matches !== ui.portrait ) resetView();
   applyOrientation();
   render();
 } );
 
+applyPhoneLayout();
 applyOrientation();
 renderDefs();
 renderTable();

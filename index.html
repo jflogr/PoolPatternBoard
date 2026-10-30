@@ -8,6 +8,7 @@
 </head>
 <body>
   <main class="app">
+    <div class="top">
     <header class="app-header">
       <h1>Pool Pattern Board</h1>
       <div class="history-tools">
@@ -17,6 +18,7 @@
         <button id="redo" type="button" title="Redo (Ctrl+Y)">Redo</button>
         <button id="clear-board" type="button">Clear table</button>
         <button id="open-help" type="button" title="How to use the board (F1)">Help</button>
+        <button id="open-more" type="button" class="more-button" title="Share, save, clear, show and help" aria-label="More">☰</button>
       </div>
     </header>
 
@@ -64,6 +66,7 @@
         <button type="button" id="delete-line">Delete line</button>
       </div>
     </section>
+    </div>
 
     <section class="table-wrap">
       <svg id="board" class="board" viewBox="-7 -7 114 64" aria-label="Pool table">
@@ -79,8 +82,10 @@
           <g id="layer-draft"></g>
         </g>
       </svg>
+      <button type="button" id="zoom-fit" class="zoom-fit" title="Show the whole table" hidden>Fit table</button>
     </section>
 
+    <div class="bottom">
     <p id="status" class="status" aria-live="polite"></p>
 
     <section class="tray" aria-label="Balls">
@@ -96,7 +101,16 @@
       <label class="check"><input data-show="ok" type="checkbox"> <i class="legend legend-ok"></i>OK</label>
       <label class="check"><input data-show="path" type="checkbox"> <i class="legend legend-path"></i>Movement</label>
     </section>
+    </div>
   </main>
+
+  <dialog id="more-menu" class="help sheet" aria-labelledby="more-title">
+    <div class="help-head">
+      <h2 id="more-title">More</h2>
+      <button type="button" id="close-more" class="clear" aria-label="Close">×</button>
+    </div>
+    <div id="more-body" class="sheet-body"></div>
+  </dialog>
 
   <dialog id="help" class="help" aria-labelledby="help-title">
     <div class="help-head">
@@ -163,8 +177,13 @@
 
       <h3>On a phone</h3>
       <ul>
-        <li>Held upright, the table stands on end so it's bigger. Turn the phone sideways for the usual view.</li>
-        <li>Use the buttons above the table for Set zone, Widen, Movement and the rest.</li>
+        <li>The whole board fits the screen. Held upright, the table stands on end so it's bigger;
+          sideways, it fills the left and the buttons sit on the right.</li>
+        <li><b>Pinch the table to zoom in</b> on the balls, and move two fingers to look around.
+          <b>Fit table</b> shows the whole table again. (With a mouse, Ctrl+wheel zooms.)</li>
+        <li>Use the buttons above the table for Set zone, Widen, Movement and the rest. Swipe the
+          row of buttons, the ball's bar or the tray sideways to see more.</li>
+        <li><b>☰</b> holds Share layout, Save image, Clear table, Help and the Show checkboxes.</li>
         <li>Double-tap a ball or a point to remove it, or select it and tap <b>Delete</b>.</li>
       </ul>
 

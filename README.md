@@ -35,12 +35,17 @@ planned, but not dragged, added or removed, so nothing moves by accident.
 
 ### Phones and tablets
 
-The app works by touch. Tap a tray ball, then tap the table to place it.
-Buttons above the table do what the keys do: tap **Set zone**, **Widen**,
-**Movement** or **Draw zone**, then tap the table. **Delete**, **Done**,
-**Undo corner/bounce** and **Cancel** cover the rest. Held upright, a phone
-shows the table on end so it's bigger; the buttons and the tray stay on screen
-around it.
+The app works by touch and fills the screen without scrolling. Tap a tray
+ball, then tap the table to place it. Buttons above the table do what the keys
+do: tap **Set zone**, **Widen**, **Movement** or **Draw zone**, then tap the
+table. **Delete**, **Done**, **Undo corner/bounce** and **Cancel** cover the
+rest, and **☰** holds Share layout, Save image, Clear table, Help and the Show
+checkboxes.
+
+**Pinch the table to zoom** and move two fingers to look around; **Fit table**
+shows all of it again. Held upright, a phone shows the table on end so it's
+bigger; sideways, the table fills the left with the controls on the right.
+With a mouse, Ctrl+wheel (or a trackpad pinch) zooms.
 
 There are two modes: **Balls** (B) for each ball's pocket and target zones, and
 **Lines** (L) for free lines. Each mode only picks up its own things.

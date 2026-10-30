@@ -225,10 +225,25 @@ input[type="color"] {
 .legend-good { background: rgba(242, 194, 0, 0.4); }
 .legend-ok { background: rgba(242, 194, 0, 0.18); border-style: dashed; }
 
+/* the phone layout groups these; elsewhere they lay out as if they weren't there */
+.top,
+.bottom { display: contents; }
+
+.more-button { display: none; }
+
 .table-wrap {
+  position: relative;
   background: #0c0f12;
   border-radius: 10px;
   padding: 8px;
+}
+
+.zoom-fit {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  background: rgba(37, 45, 54, 0.92);
 }
 
 .board {
@@ -402,7 +417,7 @@ button { touch-action: manipulation; }
 .keys td { padding: 4px 8px 4px 0; vertical-align: top; }
 .keys td:nth-child(odd) { white-space: nowrap; }
 
-@media (pointer: coarse), (max-width: 760px) {
+@media (max-width: 760px) {
   .actions { display: flex; }
   .hotkeys { display: none; }
   .actions button { padding: 6px 10px; }
@@ -440,4 +455,142 @@ button { touch-action: manipulation; }
   .actions button { padding: 6px 9px; font-size: 13px; }
   /* stood on end, the tray takes two rows */
   .board.portrait { max-height: calc(100svh - 190px); }
+}
+
+/* ---------- phone and tablet: fill the screen, no page scrolling ---------- */
+
+.sheet-body {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 18px;
+}
+
+.sheet-body > button { padding: 10px 12px; text-align: left; }
+.sheet-body .view-options { padding-top: 6px; }
+
+body.phone { overflow: hidden; }
+body.phone kbd { display: none; }
+body.phone .help-body kbd { display: inline; }
+
+body.phone .app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  padding: 6px 10px 8px;
+  gap: 6px;
+}
+
+body.phone .top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* one row of mode, lock, undo, redo and More; then the ball's strip and the actions */
+body.phone .toolbar { display: contents; }
+body.phone .hotkeys,
+body.phone .app-header h1,
+body.phone .lock-text { display: none; }
+body.phone .mode-switch[aria-label="Mode"] { order: 1; }
+body.phone .lock-balls { order: 2; }
+body.phone .app-header { order: 3; margin-left: auto; }
+body.phone .more-button { display: inline-block; font-size: 16px; line-height: 1.1; }
+body.phone .history-tools { flex-wrap: nowrap; }
+body.phone .history-tools button,
+body.phone .mode-switch button,
+body.phone .lock-balls { padding: 6px 10px; }
+
+body.phone .strip {
+  order: 4;
+  flex: 1 1 100%;
+  flex-wrap: nowrap;
+  min-height: 0;
+  padding: 3px 8px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+body.phone .strip > * { flex: none; }
+body.phone .current-ball { min-width: 0; }
+body.phone .item-value { min-width: 0; }
+
+body.phone .actions {
+  order: 5;
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: nowrap;
+  position: static;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  background: none;
+}
+
+body.phone .actions button { flex: none; padding: 6px 10px; font-size: 13px; }
+
+/* the table takes whatever height is left */
+body.phone .table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 3px;
+}
+
+body.phone .board,
+body.phone .board.portrait {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+body.phone .bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+body.phone .status {
+  flex: none;
+  font-size: 12px;
+  line-height: 1.3;
+  /* always two lines tall, so a longer hint doesn't shift the table */
+  height: 2.6em;
+  min-height: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+body.phone .tray {
+  position: static;
+  padding: 4px 6px;
+  box-shadow: none;
+}
+
+body.phone .tray .group-label { display: none; }
+body.phone .tray-balls { flex-wrap: nowrap; overflow-x: auto; }
+body.phone .strip,
+body.phone .actions,
+body.phone .tray-balls { scrollbar-width: none; }
+/* sideways swipes scroll the tray; any other drag pulls the ball out */
+body.phone .tray-ball { flex: none; width: 36px; height: 36px; touch-action: pan-x; }
+
+/* Sideways, the table fills the left and the controls stack on the right. */
+@media (orientation: landscape) {
+  body.phone .app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(200px, 27vw, 300px);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 6px 10px;
+  }
+
+  body.phone .table-wrap { grid-column: 1; grid-row: 1 / 3; }
+  body.phone .top { grid-column: 2; grid-row: 1; }
+  body.phone .bottom { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto; }
+  body.phone .actions { flex-wrap: wrap; overflow: visible; }
+  body.phone .tray-balls { flex-wrap: wrap; overflow: visible; }
+  body.phone .tray-ball { width: 32px; height: 32px; touch-action: none; }
 }
