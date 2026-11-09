@@ -78,7 +78,8 @@ const layers = {
   pockets: document.getElementById( "layer-pockets" ),
   balls: document.getElementById( "layer-balls" ),
   handles: document.getElementById( "layer-handles" ),
-  draft: document.getElementById( "layer-draft" )
+  draft: document.getElementById( "layer-draft" ),
+  safety: document.getElementById( "layer-safety" )
 };
 const tray = document.getElementById( "tray" );
 const ghost = document.getElementById( "drag-ghost" );
@@ -143,7 +144,7 @@ function pixels( count ) {
 // Screen pixels for a grip: a bit over double for a finger.
 const grip = count => pixels( coarseQuery.matches ? count * 2.2 : count );
 
-// zoomed: false draws the whole table whatever the zoom (for Save image)
+// zoomed: false draws the whole table whatever the zoom (for Copy image)
 function applyOrientation( portrait = portraitQuery.matches, zoomed = true ) {
   ui.portrait = portrait;
   if ( ui.portrait ) world.setAttribute( "transform", PORTRAIT_TRANSFORM );
@@ -265,6 +266,9 @@ function loadBoard() {
           hand: isObject && validPoint( ball.hand ) ? { x: ball.hand.x, y: ball.hand.y } : null,
           path: isObject && Array.isArray( ball.path ) && ball.path.length && ball.path.every( validPoint )
             ? ball.path.map( p => ( { x: p.x, y: p.y, rail: Boolean( p.rail ) } ) )
+            : null,
+          safety: isObject && ball.safety
+            ? { cue: loadSafetyPath( ball.safety.cue ), object: loadSafetyPath( ball.safety.object ) }
             : null
         };
       }
@@ -281,6 +285,18 @@ function loadBoard() {
   }
 }
 
+// A safety path's points: rail bounces and the stopping point where they are,
+// and the contact as an angle round the object ball so it follows the ball.
+function loadSafetyPath( points ) {
+  if ( !Array.isArray( points ) || !points.length ) return null;
+  const loaded = points.map( q => {
+    if ( q?.kind === "contact" && Number.isFinite( q.angle ) ) return { kind: "contact", angle: q.angle };
+    if ( ( q?.kind === "rail" || q?.kind === "end" ) && validPoint( q ) ) return { kind: q.kind, x: q.x, y: q.y };
+    return null;
+  } );
+  return loaded.every( Boolean ) ? loaded : null;
+}
+
 function saveBoard() {
   try {
     localStorage.setItem( BOARD_KEY, JSON.stringify( board ) );
@@ -292,7 +308,7 @@ function saveBoard() {
 function loadSettings() {
   const defaults = {
     pocketLines: true,
-    show: { hand: true, good: true, ok: true, path: true },
+    show: { hand: true, good: true, ok: true, path: true, safety: true },
     lineColor: LINE_COLORS[0],
     lineArrow: true,
     lineWidth: "thin"
@@ -342,6 +358,7 @@ function restore( from, to ) {
     ( selection.type === "ball" && board.balls[selection.id] ) ||
     ( selection.type === "hand" && board.balls[selection.id]?.hand ) ||
     ( selection.type === "path" && board.balls[selection.id]?.path ) ||
+    ( selection.type === "safety" && board.balls[selection.id]?.safety?.[selection.which] ) ||
     ( selection.type === "region" && findRegion( selection.id ) ) ||
     ( selection.type === "line" && findLine( selection.id ) );
   if ( !exists ) ui.selection = null;
@@ -552,6 +569,113 @@ function pathMarkup( id, start, points, hit = true ) {
   return markup;
 }
 
+// ---------- safety ----------
+
+// A safety shows where both balls go: the cue ball from where it sits, maybe
+// off rails first (a kick), to the contact beside the object ball, then off
+// rails to where it stops; and the object ball from where it sits to where it
+// stops.
+const railPoint = p => {
+  const { x, y } = toRail( p );
+  return { x, y, kind: "rail" };
+};
+const endPoint = p => ( { ...clampToCloth( p, BALL_RADIUS ), kind: "end" } );
+const contactPoint = ( ball, angle ) => ( {
+  x: ball.x + Math.cos( angle ) * 2 * BALL_RADIUS,
+  y: ball.y + Math.sin( angle ) * 2 * BALL_RADIUS,
+  kind: "contact"
+} );
+const SAFETY_NAMES = { cue: "Cue ball path", object: "Object ball path" };
+
+// The route on the table, from the moving ball through each point; null when
+// that ball isn't on the table.
+function safetyRoute( id, which, points = board.balls[id]?.safety?.[which] ) {
+  const ball = board.balls[id];
+  const start = which === "cue" ? board.balls.cue : ball;
+  if ( !ball || !start || !points ) return null;
+  return [{ x: start.x, y: start.y }, ...points.map( q => q.kind === "contact" ? contactPoint( ball, q.angle ) : q )];
+}
+
+// What a click at p adds to the path being drawn, or null if it can't go there.
+function safetyPoint( draft, p ) {
+  const ball = board.balls[draft.ball];
+  const needsContact = draft.which === "cue" && !draft.points.some( q => q.kind === "contact" );
+  if ( needsContact && distance( p, ball ) < Math.max( 4 * BALL_RADIUS, grip( 20 ) ) ) {
+    return { kind: "contact", angle: Math.atan2( p.y - ball.y, p.x - ball.x ) };
+  }
+  if ( !isOnCloth( p ) ) return railPoint( p );
+  return needsContact ? null : endPoint( p );
+}
+
+function safetyMarkup( id, which, route, hit = true ) {
+  const color = which === "cue" ? CUE_COLOR : ballColor( id );
+  const selected = ui.selection?.type === "safety" && ui.selection.id === id && ui.selection.which === which;
+  const width = selected ? 0.32 : 0.22;
+  const last = route[route.length - 1];
+  const previous = route[route.length - 2];
+  const gap = previous ? distance( previous, last ) : 0;
+  // stop the line at the edge of the stopping ring
+  const stop = last.kind === "end" && gap > BALL_RADIUS
+    ? { x: last.x - ( last.x - previous.x ) / gap * BALL_RADIUS, y: last.y - ( last.y - previous.y ) / gap * BALL_RADIUS }
+    : last;
+  let markup = "";
+  if ( route.length > 1 ) {
+    const points = pointsAttr( [...route.slice( 0, -1 ), stop] );
+    // a dark edge keeps the white cue ball line readable on the grey cloth
+    markup += `<polyline class="path-visual" points="${points}" fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="${width + 0.18}" stroke-linejoin="round"/>` +
+      `<polyline class="path-visual" points="${points}" fill="none" stroke="${color}" stroke-width="${width}" stroke-linejoin="round"/>`;
+  }
+  for ( const q of route ) {
+    if ( q.kind === "contact" ) {
+      markup += `<circle class="path-visual" cx="${round( q.x )}" cy="${round( q.y )}" r="${BALL_RADIUS}" fill="none" stroke="${CUE_COLOR}" stroke-width="0.15" stroke-dasharray="0.45 0.3"/>`;
+    }
+  }
+  if ( last.kind === "end" ) {
+    const ring = `cx="${round( last.x )}" cy="${round( last.y )}" r="${BALL_RADIUS - width / 2}" fill="none"`;
+    markup += `<circle class="path-visual" ${ring} stroke="rgba(0,0,0,0.35)" stroke-width="${width + 0.18}"/>` +
+      `<circle class="path-visual" ${ring} stroke="${color}" stroke-width="${width}"/>`;
+  }
+  if ( hit && route.length > 1 ) {
+    markup += `<polyline class="line-hit" data-hit="safety" data-id="${id}" data-which="${which}" points="${pointsAttr( route )}" stroke-width="${Math.max( 1.5, grip( 12 ) )}"/>`;
+  }
+  return markup;
+}
+
+function safetyDraftClick( p ) {
+  const draft = ui.draft;
+  if ( !isOnTable( p ) ) return;
+  const point = safetyPoint( draft, p );
+  if ( !point ) {
+    ui.message = `Click next to the ${ballName( draft.ball )} where the cue ball hits it, or a rail first for a kick.`;
+    renderControls();
+    return;
+  }
+  ui.message = "";
+  draft.points.push( point );
+  if ( point.kind !== "end" ) {
+    renderDraft();
+    renderControls();
+    return;
+  }
+  pushUndo();
+  const ball = board.balls[draft.ball];
+  ball.safety = { cue: null, object: null, ...ball.safety, [draft.which]: draft.points };
+  ui.draft = null;
+  ui.tool = "select";
+  ui.selection = { type: "safety", id: draft.ball, which: draft.which };
+  render();
+}
+
+function clearSafety( which ) {
+  const ballId = currentBall();
+  const safety = ballId && board.balls[ballId].safety;
+  if ( !safety?.[which] ) return;
+  pushUndo();
+  safety[which] = null;
+  if ( ui.selection?.type === "safety" && ui.selection.which === which ) ui.selection = null;
+  render();
+}
+
 // ---------- render ----------
 
 function render() {
@@ -574,13 +698,21 @@ function render() {
 
   layers.lines.innerHTML = board.lines.map( line => lineMarkup( line ) ).join( "" );
 
+  layers.safety.innerHTML = settings.show.safety
+    ? Object.keys( board.balls ).flatMap( id => ["object", "cue"].map( which => {
+      const route = safetyRoute( id, which );
+      return route ? safetyMarkup( id, which, route ) : "";
+    } ) ).join( "" )
+    : "";
+
   layers.pocketLines.innerHTML = settings.pocketLines
     ? Object.entries( board.balls ).filter( ( [, ball] ) => ball.pocket ).map( ( [id, ball] ) => pocketLineMarkup( id, ball ) ).join( "" )
     : "";
 
   const chosenPocket = ballId ? board.balls[ballId].pocket : null;
   layers.pockets.innerHTML = POCKETS.map( p => {
-    const state = !ballId ? "" : p.id === chosenPocket ? " armed chosen" : " armed";
+    // pockets only take clicks in Balls mode
+    const state = !ballId || ui.mode !== "ball" ? "" : p.id === chosenPocket ? " armed chosen" : " armed";
     return `<circle class="pocket-hit${state}" data-hit="pocket" data-id="${p.id}" cx="${p.draw.x}" cy="${p.draw.y}" r="${p.radius + 0.8}"/>`;
   } ).join( "" );
 
@@ -638,6 +770,12 @@ function handlesMarkup() {
     return path.map( ( p, index ) =>
       handleMarkup( `data-hit="path-point" data-id="${selection.id}" data-index="${index}"`, p ) ).join( "" );
   }
+  if ( selection?.type === "safety" ) {
+    const route = settings.show.safety && safetyRoute( selection.id, selection.which );
+    if ( !route ) return "";
+    return route.slice( 1 ).map( ( p, index ) =>
+      handleMarkup( `data-hit="safety-point" data-id="${selection.id}" data-which="${selection.which}" data-index="${index}"`, p ) ).join( "" );
+  }
   if ( selection?.type === "line" ) {
     const line = findLine( selection.id );
     if ( !line ) return "";
@@ -649,9 +787,10 @@ function handlesMarkup() {
 
 function renderDraft() {
   const draft = ui.draft;
-  svg.classList.toggle( "drawing", ui.mode === "ball" && ui.tool !== "select" );
+  svg.classList.toggle( "drawing", ui.tool !== "select" );
   svg.classList.toggle( "mode-ball", ui.mode === "ball" );
   svg.classList.toggle( "mode-line", ui.mode === "line" );
+  svg.classList.toggle( "mode-safety", ui.mode === "safety" );
   if ( !draft ) {
     layers.draft.innerHTML = "";
     return;
@@ -659,6 +798,12 @@ function renderDraft() {
   if ( draft.type === "line" ) {
     const end = draft.awaitingEnd ? ui.cursor ?? draft.a : draft.b;
     layers.draft.innerHTML = lineMarkup( { a: draft.a, b: end, color: settings.lineColor, arrow: settings.lineArrow, width: settings.lineWidth }, false );
+    return;
+  }
+  if ( draft.type === "safety" ) {
+    const preview = ui.cursor && isOnTable( ui.cursor ) ? safetyPoint( draft, ui.cursor ) : null;
+    const route = safetyRoute( draft.ball, draft.which, preview ? [...draft.points, preview] : draft.points );
+    layers.draft.innerHTML = route ? safetyMarkup( draft.ball, draft.which, route, false ) : "";
     return;
   }
   if ( draft.type === "path" ) {
@@ -702,10 +847,13 @@ function renderControls() {
   for ( const button of document.querySelectorAll( "[data-mode]" ) ) button.classList.toggle( "active", button.dataset.mode === ui.mode );
   document.getElementById( "ball-strip" ).hidden = ui.mode !== "ball";
   document.getElementById( "line-strip" ).hidden = ui.mode !== "line";
+  document.getElementById( "safety-strip" ).hidden = ui.mode !== "safety";
 
-  document.getElementById( "hotkeys" ).innerHTML = ui.mode === "ball"
-    ? "With the mouse on the table: <kbd>Z</kbd> set zone · <kbd>W</kbd> widen · <kbd>M</kbd> movement · <kbd>G</kbd> draw a zone by hand · click a pocket for the pocket line"
-    : "Drag to draw a line, or click its start then its end · click a line to edit it";
+  document.getElementById( "hotkeys" ).innerHTML = {
+    ball: "With the mouse on the table: <kbd>Z</kbd> set zone · <kbd>W</kbd> widen · <kbd>M</kbd> movement · <kbd>G</kbd> draw a zone by hand · click a pocket for the pocket line",
+    safety: "Select the ball the cue ball hits, then <kbd>C</kbd> cue ball path · <kbd>O</kbd> object ball path · click a rail for each bounce, the cloth where the ball stops",
+    line: "Drag to draw a line, or click its start then its end · click a line to edit it"
+  }[ui.mode];
   renderActions();
 
   const ball = ballId ? board.balls[ballId] : null;
@@ -727,6 +875,15 @@ function renderControls() {
     document.getElementById( `clear-${part}` ).disabled = !isSet;
   }
   document.getElementById( "clear-zones" ).disabled = !( parts.zone || parts.ok || parts.path );
+
+  const safetyStrip = document.getElementById( "safety-strip" );
+  safetyStrip.style.setProperty( "--ball", ballId ? ballColor( ballId ) : "#666" );
+  document.getElementById( "safety-ball" ).innerHTML = document.getElementById( "current-ball" ).innerHTML;
+  for ( const which of ["cue", "object"] ) {
+    const isSet = Boolean( ball?.safety?.[which] );
+    document.getElementById( `item-safety-${which}` ).classList.toggle( "unset", !isSet );
+    document.getElementById( `clear-safety-${which}` ).disabled = !isSet;
+  }
 
   const selectedLine = ui.selection?.type === "line" ? findLine( ui.selection.id ) : null;
   const activeColor = selectedLine?.color ?? settings.lineColor;
@@ -767,6 +924,11 @@ const TOOL_BUTTONS = [
   { tool: "good", label: "Draw zone", key: "G" }
 ];
 
+const SAFETY_BUTTONS = [
+  { tool: "safety-cue", label: "Cue ball path", key: "C" },
+  { tool: "safety-object", label: "Object ball path", key: "O" }
+];
+
 function renderActions() {
   const draft = ui.draft;
   const button = ( action, label, { active = false, disabled = false, title = "" } = {} ) =>
@@ -783,7 +945,13 @@ function renderActions() {
       parts.push( button( "back", draft.type === "path" ? "Undo bounce" : "Undo corner", { disabled: !draft.points.length, title: "Backspace" } ) );
     }
   }
-  const isBusy = Boolean( draft || ui.placing || ( ui.mode === "ball" && ui.tool !== "select" ) );
+  if ( ui.mode === "safety" ) {
+    const hasBall = Boolean( currentBall() );
+    parts.push( SAFETY_BUTTONS.map( item => button( `tool-${item.tool}`, item.label,
+      { active: ui.tool === item.tool, disabled: !hasBall, title: `${item.label} (${item.key})` } ) ).join( "" ) );
+    if ( draft?.type === "safety" ) parts.push( button( "back", "Undo point", { disabled: !draft.points.length, title: "Backspace" } ) );
+  }
+  const isBusy = Boolean( draft || ui.placing || ui.tool !== "select" );
   const hasSelection = Boolean( ui.point || ui.selection );
   if ( !isBusy ) parts.push( button( "delete", "Delete", { disabled: !hasSelection, title: "Remove the selected item (Delete)" } ) );
   parts.push( isBusy
@@ -808,6 +976,8 @@ const TOUCH_WORDS = [
     "Tap Set zone, Widen or Movement, then tap the table."],
   [/press Z with the mouse where the cue ball should end up/g, "tap Set zone, then where the cue ball should end up"],
   [/ B goes back to the balls\./g, ""],
+  [/C draws the cue ball's path, O draws the (\w+ ball)'s path\./g, "tap Cue ball path or Object ball path, then the table."],
+  [/Backspace takes back a point, /g, "Undo point takes one back. "],
   [/Help \(F1\)/g, "Help (in ☰)"],
   [/double-click/g, "double-tap"],
   [/\bClick\b/g, "Tap"],
@@ -834,6 +1004,20 @@ function hint() {
       : `Movement for the ${ballName( draft.ball )}: click the cloth where the cue ball stops, or click a rail for the first bounce. Esc cancels.`;
   }
   if ( draft?.type === "line" && draft.awaitingEnd ) return "Click where the line ends. Esc cancels.";
+  if ( draft?.type === "safety" ) {
+    const name = draft.which === "cue" ? "Cue ball path" : `Path of the ${ballName( draft.ball )}`;
+    const needsContact = draft.which === "cue" && !draft.points.some( q => q.kind === "contact" );
+    return needsContact
+      ? `${name}: click next to the ${ballName( draft.ball )} where the cue ball hits it, or a rail first for a kick. Esc cancels.`
+      : `${name}: click a rail for each bounce, then the cloth where it stops. Backspace takes back a point, Esc cancels.`;
+  }
+  if ( ui.mode === "safety" ) {
+    if ( ui.selection?.type === "safety" ) {
+      return `${SAFETY_NAMES[ui.selection.which]} for the ${ballName( ui.selection.id )}. Drag its points: bounces slide along the rails and the contact goes round the ball. Delete removes it.`;
+    }
+    if ( ballId ) return `Safety on the ${ballName( ballId )}: C draws the cue ball's path, O draws the ${ballName( ballId )}'s path. Lines mode adds free lines.`;
+    return "Safety: click the ball the cue ball hits first.";
+  }
   if ( ui.mode === "line" ) {
     return ui.selection?.type === "line"
       ? "Line selected. Drag it, or drag its ends. Pick a color or the arrow to restyle it. Delete removes it. B goes back to the balls."
@@ -861,6 +1045,17 @@ function hint() {
 
 // ---------- actions ----------
 
+// A selection belongs to the mode that edits it; balls are shared by Balls and Safety.
+function dropForeignSelection() {
+  const type = ui.selection?.type;
+  if ( !type ) return;
+  const modes = { line: ["line"], safety: ["safety"], ball: ["ball", "safety"] }[type] ?? ["ball"];
+  if ( !modes.includes( ui.mode ) ) {
+    ui.selection = null;
+    ui.point = null;
+  }
+}
+
 function setMode( mode ) {
   ui.mode = mode;
   ui.tool = "select";
@@ -868,7 +1063,7 @@ function setMode( mode ) {
   ui.point = null;
   ui.placing = null;
   ui.message = "";
-  if ( ( ui.selection?.type === "line" ) !== ( mode === "line" ) ) ui.selection = null;
+  dropForeignSelection();
   render();
 }
 
@@ -876,14 +1071,18 @@ function setTool( tool ) {
   ui.message = "";
   ui.draft = null;
   ui.placing = null;
-  if ( ui.mode !== "ball" ) {
-    ui.mode = "ball";
-    if ( ui.selection?.type === "line" ) ui.selection = null;
+  const mode = tool.startsWith( "safety" ) ? "safety" : "ball";
+  if ( ui.mode !== mode ) {
+    ui.mode = mode;
+    dropForeignSelection();
   }
   const ballId = currentBall();
-  if ( ( tool === "hand" || tool === "good" || tool === "widen" || tool === "path" ) && !ballId ) {
+  if ( tool !== "select" && !ballId ) {
     ui.tool = "select";
-    ui.message = "Select an object ball first.";
+    ui.message = mode === "safety" ? "Select the ball the cue ball hits first." : "Select an object ball first.";
+  } else if ( tool === "safety-cue" && !board.balls.cue ) {
+    ui.tool = "select";
+    ui.message = "Put the cue ball on the table first.";
   } else if ( tool === "path" && !board.balls[ballId].pocket ) {
     ui.tool = "select";
     ui.message = `Pick the ${ballName( ballId )}'s pocket first: the movement starts from the ghost ball.`;
@@ -894,6 +1093,9 @@ function setTool( tool ) {
     ui.tool = tool;
     if ( tool === "good" ) ui.draft = { type: "region", kind: "good", ball: ballId, points: [] };
     if ( tool === "path" ) ui.draft = { type: "path", ball: ballId, points: [] };
+    if ( tool === "safety-cue" || tool === "safety-object" ) {
+      ui.draft = { type: "safety", which: tool === "safety-cue" ? "cue" : "object", ball: ballId, points: [] };
+    }
   }
   render();
 }
@@ -1120,6 +1322,7 @@ function deleteSelection() {
   pushUndo();
   if ( selection.type === "hand" ) board.balls[selection.id].hand = null;
   if ( selection.type === "path" ) board.balls[selection.id].path = null;
+  if ( selection.type === "safety" ) board.balls[selection.id].safety[selection.which] = null;
   if ( selection.type === "region" ) board.regions = board.regions.filter( region => region.id !== selection.id );
   if ( selection.type === "line" ) board.lines = board.lines.filter( line => line.id !== selection.id );
   ui.selection = null;
@@ -1250,6 +1453,10 @@ svg.addEventListener( "pointerdown", event => {
     pathDraftClick( p );
     return;
   }
+  if ( ui.draft?.type === "safety" ) {
+    safetyDraftClick( p );
+    return;
+  }
   if ( ui.tool === "hand" || ui.tool === "widen" ) {
     if ( !isOnCloth( p ) ) return;
     if ( ui.tool === "hand" ) placeHand( p );
@@ -1300,6 +1507,14 @@ svg.addEventListener( "pointerdown", event => {
       break;
     case "path-point":
       startDrag( { type: "path-point", id, index, start: p } );
+      break;
+    case "safety":
+      setBall( id );
+      ui.selection = { type: "safety", id, which: hit.dataset.which };
+      render();
+      break;
+    case "safety-point":
+      startDrag( { type: "safety-point", id, which: hit.dataset.which, index, start: p } );
       break;
     case "hand":
       setBall( id );
@@ -1395,6 +1610,15 @@ window.addEventListener( "pointermove", event => {
     case "vertex":
       findRegion( drag.id ).points[drag.index] = clampToCloth( { x: drag.origin.x + dx, y: drag.origin.y + dy } );
       break;
+    case "safety-point": {
+      // bounces slide along the rails, the contact goes round the object ball
+      const ball = board.balls[drag.id];
+      const points = ball.safety[drag.which];
+      const kind = points[drag.index].kind;
+      points[drag.index] = kind === "contact" ? { kind, angle: Math.atan2( p.y - ball.y, p.x - ball.x ) }
+        : kind === "rail" ? railPoint( p ) : endPoint( p );
+      break;
+    }
     case "path-point": {
       // bounces slide along the rails; the stopping point stays on the cloth
       const path = board.balls[drag.id].path;
@@ -1508,7 +1732,7 @@ tray.addEventListener( "pointerdown", event => {
   event.preventDefault();
   const id = button.dataset.ball;
   ui.message = "";
-  if ( ui.mode !== "ball" ) setMode( "ball" );
+  if ( ui.mode === "line" ) setMode( "ball" );
   if ( board.balls[id] ) {
     ui.placing = null;
     setBall( id );
@@ -1563,6 +1787,8 @@ document.getElementById( "clear-ok" ).addEventListener( "click", () => clearForB
 document.getElementById( "clear-path" ).addEventListener( "click", () => clearForBall( ["path"] ) );
 document.getElementById( "clear-zones" ).addEventListener( "click", () => clearForBall( ["hand", "good", "ok", "path"] ) );
 document.getElementById( "delete-line" ).addEventListener( "click", deleteSelection );
+document.getElementById( "clear-safety-cue" ).addEventListener( "click", () => clearSafety( "cue" ) );
+document.getElementById( "clear-safety-object" ).addEventListener( "click", () => clearSafety( "object" ) );
 
 document.getElementById( "line-swatches" ).innerHTML = LINE_COLORS.map( color =>
   `<button type="button" class="line-swatch" data-color="${color}" style="background:${color}" title="Line color" aria-label="Line color ${color}"></button>` ).join( "" );
@@ -1619,8 +1845,8 @@ const EXPORT_STYLE = `
   .region { stroke-linejoin: round; }`;
 
 // Draw the table as it stands, without handles, selection rings or click
-// targets, and download it as a PNG.
-async function saveImage() {
+// targets, as a PNG.
+async function makeImage() {
   const kept = { selection: ui.selection, point: ui.point, draft: ui.draft };
   ui.selection = null;
   ui.point = null;
@@ -1660,23 +1886,45 @@ async function saveImage() {
     context.fillRect( 0, 0, pixelWidth, pixelHeight );
     context.drawImage( picture, 0, 0, pixelWidth, pixelHeight );
     const blob = await new Promise( resolve => canvas.toBlob( resolve, "image/png" ) );
-    const now = new Date();
-    const two = value => String( value ).padStart( 2, "0" );
-    const stamp = `${now.getFullYear()}-${two( now.getMonth() + 1 )}-${two( now.getDate() )}-${two( now.getHours() )}${two( now.getMinutes() )}`;
-    const link = document.createElement( "a" );
-    link.href = URL.createObjectURL( blob );
-    link.download = `pool-pattern-${stamp}.png`;
-    link.click();
-    setTimeout( () => URL.revokeObjectURL( link.href ), 1000 );
-  } catch {
-    ui.message = "Couldn't make the image in this browser.";
-    render();
+    if ( !blob ) throw new Error( "no image" );
+    return blob;
   } finally {
     URL.revokeObjectURL( url );
   }
 }
 
-document.getElementById( "save-image" ).addEventListener( "click", saveImage );
+function downloadImage( blob ) {
+  const now = new Date();
+  const two = value => String( value ).padStart( 2, "0" );
+  const stamp = `${now.getFullYear()}-${two( now.getMonth() + 1 )}-${two( now.getDate() )}-${two( now.getHours() )}${two( now.getMinutes() )}`;
+  const link = document.createElement( "a" );
+  link.href = URL.createObjectURL( blob );
+  link.download = `pool-pattern-${stamp}.png`;
+  link.click();
+  setTimeout( () => URL.revokeObjectURL( link.href ), 1000 );
+}
+
+// Copy the picture so it pastes straight into a chat or document. Safari only
+// allows the copy if it starts inside the click, so the clipboard is handed the
+// picture still being drawn. Where images can't be copied it downloads instead.
+async function copyImage() {
+  const image = makeImage();
+  try {
+    if ( !navigator.clipboard?.write || typeof ClipboardItem === "undefined" ) throw new Error( "no image clipboard" );
+    await navigator.clipboard.write( [new ClipboardItem( { "image/png": image } )] );
+    ui.message = "Image copied. Paste it into a chat, email or document.";
+  } catch {
+    try {
+      downloadImage( await image );
+      ui.message = "This browser can't copy pictures, so the image was downloaded instead.";
+    } catch {
+      ui.message = "Couldn't make the image in this browser.";
+    }
+  }
+  render();
+}
+
+document.getElementById( "copy-image" ).addEventListener( "click", copyImage );
 
 document.getElementById( "lock-balls" ).addEventListener( "click", () => {
   board.locked = !board.locked;
@@ -1812,7 +2060,7 @@ const ARROWS = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrow
 
 // Esc: drop whatever is half done, then the selected point, item and ball in turn.
 function cancelOrDeselect() {
-  if ( ui.draft || ui.placing || ( ui.mode === "ball" && ui.tool !== "select" ) ) {
+  if ( ui.draft || ui.placing || ui.tool !== "select" ) {
     ui.draft = null;
     ui.placing = null;
     ui.tool = "select";
@@ -1820,7 +2068,7 @@ function cancelOrDeselect() {
     ui.point = null;
   } else if ( ui.selection ) {
     ui.selection = null;
-  } else if ( ui.mode === "ball" ) {
+  } else if ( ui.mode !== "line" ) {
     ui.ball = null;
   }
   ui.message = "";
@@ -1882,7 +2130,7 @@ document.addEventListener( "keydown", event => {
     cancelOrDeselect();
   } else if ( key === "enter" && draft?.type === "region" ) {
     finishRegion();
-  } else if ( key === "backspace" && ( draft?.type === "path" || draft?.type === "region" ) ) {
+  } else if ( key === "backspace" && ( draft?.type === "path" || draft?.type === "region" || draft?.type === "safety" ) ) {
     takeBackDraftPoint();
   } else if ( key === "delete" || key === "backspace" ) {
     deleteSelection();
@@ -1892,6 +2140,12 @@ document.addEventListener( "keydown", event => {
     setMode( "ball" );
   } else if ( key === "l" ) {
     setMode( "line" );
+  } else if ( key === "s" ) {
+    setMode( "safety" );
+  } else if ( key === "c" ) {
+    setTool( "safety-cue" );
+  } else if ( key === "o" ) {
+    setTool( "safety-object" );
   } else if ( key === "g" ) {
     setTool( "good" );
   } else if ( key === "m" ) {
@@ -1917,7 +2171,7 @@ document.addEventListener( "keydown", event => {
 // buttons used now and then move into the More menu.
 const moreMenu = document.getElementById( "more-menu" );
 const moreBody = document.getElementById( "more-body" );
-const MENU_ITEMS = [...["share-layout", "save-image", "clear-board", "open-help"].map( id => document.getElementById( id ) ),
+const MENU_ITEMS = [...["share-layout", "copy-image", "clear-board", "open-help"].map( id => document.getElementById( id ) ),
   document.querySelector( ".view-options" )];
 const menuHomes = new Map( MENU_ITEMS.map( element => [element, { parent: element.parentNode, next: element.nextSibling }] ) );
 

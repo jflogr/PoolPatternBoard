@@ -175,6 +175,9 @@ button.clear:hover:not(:disabled) { color: var(--text); border-color: var(--bord
 .swatch.hand { border-radius: 50%; background: rgba(246, 243, 234, 0.6); }
 .swatch.good { border-radius: 2px; background: color-mix(in srgb, var(--ball) 45%, transparent); }
 .swatch.path { width: 14px; height: 0; border-width: 2px 0 0; border-radius: 0; vertical-align: 3px; }
+.swatch.safety-cue,
+.swatch.safety-object { width: 14px; height: 0; border-width: 2px 0 0; border-radius: 0; vertical-align: 3px; }
+.swatch.safety-cue { border-color: #f6f3ea; }
 .swatch.ok { border-radius: 2px; border-style: dashed; background: color-mix(in srgb, var(--ball) 20%, transparent); }
 
 .line-swatches { display: inline-flex; gap: 4px; }
@@ -223,6 +226,7 @@ input[type="color"] {
 .legend-hand { width: 12px; height: 12px; border-radius: 50%; background: rgba(246, 243, 234, 0.6); }
 .legend-path { height: 0; border-width: 2px 0 0; border-radius: 0; background: none; }
 .legend-good { background: rgba(242, 194, 0, 0.4); }
+.legend-safety { height: 0; border-width: 2px 0 0; border-radius: 0; background: none; border-color: #f6f3ea; }
 .legend-ok { background: rgba(242, 194, 0, 0.18); border-style: dashed; }
 
 /* the phone layout groups these; elsewhere they lay out as if they weren't there */
@@ -362,6 +366,17 @@ input[type="color"] {
 .board.mode-line #layer-pockets,
 .board.mode-line #layer-balls { pointer-events: none; }
 .board.mode-line { cursor: crosshair; }
+.board.mode-ball #layer-safety,
+.board.mode-line #layer-safety,
+.board.drawing #layer-safety,
+.board.mode-safety #layer-regions,
+.board.mode-safety #layer-lines,
+.board.mode-safety #layer-pockets { pointer-events: none; }
+
+/* Undo and Redo: words on a computer, arrows on a phone */
+.history-tools .icon { display: none; }
+body.phone .history-tools .icon { display: inline; font-size: 17px; line-height: 1; }
+body.phone .history-tools .label { display: none; }
 
 /* Touch-screen buttons for what the keys do; a mouse uses the keys instead. */
 .actions {

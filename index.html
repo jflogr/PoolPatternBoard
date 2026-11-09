@@ -13,9 +13,9 @@
       <h1>Pool Pattern Board</h1>
       <div class="history-tools">
         <button id="share-layout" type="button" title="Copy a link to this layout: the balls only, so others can plan it their own way">Share layout</button>
-        <button id="save-image" type="button" title="Download a picture of the table as a PNG">Save image</button>
-        <button id="undo" type="button" title="Undo (Ctrl+Z)">Undo</button>
-        <button id="redo" type="button" title="Redo (Ctrl+Y)">Redo</button>
+        <button id="copy-image" type="button" title="Copy a picture of the table, to paste into a chat or document">Copy image</button>
+        <button id="undo" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"><span class="icon" aria-hidden="true">↶</span><span class="label">Undo</span></button>
+        <button id="redo" type="button" title="Redo (Ctrl+Y)" aria-label="Redo"><span class="icon" aria-hidden="true">↷</span><span class="label">Redo</span></button>
         <button id="clear-board" type="button">Clear table</button>
         <button id="open-help" type="button" title="How to use the board (F1)">Help</button>
         <button id="open-more" type="button" class="more-button" title="Share, save, clear, show and help" aria-label="More">☰</button>
@@ -29,6 +29,7 @@
       <div class="mode-switch" role="group" aria-label="Mode">
         <button type="button" data-mode="ball" title="Work on a ball: pocket, target and zones (B)">Balls <kbd>B</kbd></button>
         <button type="button" data-mode="line" title="Draw and edit lines (L)">Lines <kbd>L</kbd></button>
+        <button type="button" data-mode="safety" title="Plan a safety: where the cue ball and the object ball go (S)">Safety <kbd>S</kbd></button>
       </div>
       <button type="button" id="lock-balls" class="lock-balls" aria-pressed="false"></button>
 
@@ -54,6 +55,18 @@
         <button type="button" id="clear-zones" title="Remove this ball's zones and movement">Clear all</button>
       </div>
 
+      <div id="safety-strip" class="strip" role="group" aria-label="Safety for the selected ball" hidden>
+        <span id="safety-ball" class="current-ball"></span>
+        <span class="item" id="item-safety-cue">
+          <i class="swatch safety-cue"></i><span class="item-label">Cue ball path</span>
+          <button type="button" class="clear" id="clear-safety-cue" title="Remove the cue ball's path" aria-label="Clear cue ball path">×</button>
+        </span>
+        <span class="item" id="item-safety-object">
+          <i class="swatch safety-object"></i><span class="item-label">Object ball path</span>
+          <button type="button" class="clear" id="clear-safety-object" title="Remove the object ball's path" aria-label="Clear object ball path">×</button>
+        </span>
+      </div>
+
       <div id="line-strip" class="strip" role="group" aria-label="Line style" hidden>
         <span id="line-swatches" class="line-swatches"></span>
         <input id="line-custom-color" type="color" title="Custom line color" aria-label="Custom line color">
@@ -76,6 +89,7 @@
           <g id="layer-regions"></g>
           <g id="layer-pocket-lines"></g>
           <g id="layer-lines"></g>
+          <g id="layer-safety"></g>
           <g id="layer-pockets"></g>
           <g id="layer-balls"></g>
           <g id="layer-handles"></g>
@@ -100,6 +114,7 @@
       <label class="check"><input data-show="good" type="checkbox"> <i class="legend legend-good"></i>Good</label>
       <label class="check"><input data-show="ok" type="checkbox"> <i class="legend legend-ok"></i>OK</label>
       <label class="check"><input data-show="path" type="checkbox"> <i class="legend legend-path"></i>Movement</label>
+      <label class="check"><input data-show="safety" type="checkbox"> <i class="legend legend-safety"></i>Safety</label>
     </section>
     </div>
   </main>
@@ -164,13 +179,31 @@
       <h3>4. Lines</h3>
       <p>Switch to <b>Lines</b> (<kbd>L</kbd>) to draw free lines: drag across the table, or click the
         start and then the end. Click a line to move it, drag its ends, or change its color, width and
-        arrow. <b>Balls</b> (<kbd>B</kbd>) goes back.</p>
+        arrow. <b>Balls</b> (<kbd>B</kbd>) goes back. Lines show in every mode, so they work for
+        patterns and safeties alike.</p>
+
+      <h3>5. Safety play</h3>
+      <p>Switch to <b>Safety</b> (<kbd>S</kbd>) to show where both balls go on a safety. Click the
+        ball the cue ball hits to select it, then:</p>
+      <ul>
+        <li><b>Cue ball path</b> (<kbd>C</kbd>): starts at the cue ball. Click next to the object
+          ball where the cue ball hits it (a dashed ghost ball marks the contact), or click a rail
+          first for a kick. Then click a rail for each bounce and the cloth where the cue ball stops.</li>
+        <li><b>Object ball path</b> (<kbd>O</kbd>): starts at the object ball. Click a rail for each
+          bounce, then the cloth where it stops.</li>
+        <li>The cue ball's path is white and the object ball's is in its own color; each ends in a
+          ring where the ball stops.</li>
+        <li>Click a path to drag its points: bounces slide along the rails and the contact goes round
+          the ball. If you move the object ball, its contact moves with it.</li>
+        <li>Use <b>Lines</b> for anything else, such as the blocking ball or the shot left behind.</li>
+      </ul>
 
       <h3>Showing and saving</h3>
       <ul>
         <li>The Show checkboxes under the tray hide pocket lines (<kbd>P</kbd>), targets, zones or
           movement.</li>
-        <li><b>Save image</b> downloads a PNG of the table.</li>
+        <li><b>Copy image</b> copies a picture of the table, ready to paste into a chat, email or
+          document. Browsers that can't copy pictures download it instead.</li>
         <li>Your board saves itself in this browser. <b>Undo</b> (<kbd>Ctrl</kbd>+<kbd>Z</kbd>) and
           <b>Redo</b> (<kbd>Ctrl</kbd>+<kbd>Y</kbd>) cover every change, even Clear table.</li>
       </ul>
@@ -183,7 +216,7 @@
           <b>Fit table</b> shows the whole table again. (With a mouse, Ctrl+wheel zooms.)</li>
         <li>Use the buttons above the table for Set zone, Widen, Movement and the rest. Swipe the
           row of buttons, the ball's bar or the tray sideways to see more.</li>
-        <li><b>☰</b> holds Share layout, Save image, Clear table, Help and the Show checkboxes.</li>
+        <li><b>☰</b> holds Share layout, Copy image, Clear table, Help and the Show checkboxes.</li>
         <li>Double-tap a ball or a point to remove it, or select it and tap <b>Delete</b>.</li>
       </ul>
 
@@ -194,9 +227,10 @@
         <tr><td><kbd>M</kbd></td><td>Movement</td><td><kbd>P</kbd></td><td>Pocket lines on/off</td></tr>
         <tr><td><kbd>G</kbd></td><td>Draw zone by hand</td><td><kbd>Esc</kbd></td><td>Cancel, then deselect</td></tr>
         <tr><td><kbd>Delete</kbd></td><td>Remove the selection</td><td><kbd>Enter</kbd></td><td>Close a drawn zone</td></tr>
-        <tr><td><kbd>Arrows</kbd></td><td>Nudge a point or target</td><td><kbd>Backspace</kbd></td><td>Take back the last corner or bounce</td></tr>
+        <tr><td><kbd>Arrows</kbd></td><td>Nudge a point or target</td><td><kbd>Backspace</kbd></td><td>Take back the last corner, bounce or point</td></tr>
         <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Undo</td><td><kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Redo</td></tr>
-        <tr><td><kbd>F1</kbd></td><td>This help</td><td></td><td></td></tr>
+        <tr><td><kbd>S</kbd></td><td>Safety mode</td><td><kbd>C</kbd></td><td>Cue ball path (safety)</td></tr>
+        <tr><td><kbd>O</kbd></td><td>Object ball path (safety)</td><td><kbd>F1</kbd></td><td>This help</td></tr>
       </table>
     </div>
   </dialog>

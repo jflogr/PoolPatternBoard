@@ -39,7 +39,7 @@ The app works by touch and fills the screen without scrolling. Tap a tray
 ball, then tap the table to place it. Buttons above the table do what the keys
 do: tap **Set zone**, **Widen**, **Movement** or **Draw zone**, then tap the
 table. **Delete**, **Done**, **Undo corner/bounce** and **Cancel** cover the
-rest, and **☰** holds Share layout, Save image, Clear table, Help and the Show
+rest, and **☰** holds Share layout, Copy image, Clear table, Help and the Show
 checkboxes.
 
 **Pinch the table to zoom** and move two fingers to look around; **Fit table**
@@ -47,8 +47,9 @@ shows all of it again. Held upright, a phone shows the table on end so it's
 bigger; sideways, the table fills the left with the controls on the right.
 With a mouse, Ctrl+wheel (or a trackpad pinch) zooms.
 
-There are two modes: **Balls** (B) for each ball's pocket and target zones, and
-**Lines** (L) for free lines. Each mode only picks up its own things.
+There are three modes: **Balls** (B) for each ball's pocket and target zones,
+**Lines** (L) for free lines, and **Safety** (S) for safety play. Each mode
+only picks up its own things, but everything shows in every mode.
 
 ### Balls mode
 
@@ -95,5 +96,21 @@ Drag to draw a line, or click the start and then the end. Click a line to
 select it, then drag it or its ends, or change its color, width (thin,
 medium or thick; thin is the default) and arrow.
 
-Ctrl+Z / Ctrl+Y undo and redo. **Save image** downloads the table as a PNG
-(2280 x 1280), leaving out handles and selection rings.
+### Safety mode
+
+Select the ball the cue ball hits, then draw where both balls go:
+
+- **Cue ball path (C)**: from the cue ball. Click next to the object ball where
+  the cue ball hits it (a dashed ghost ball marks the contact), or click a rail
+  first for a kick; then a rail for each bounce and the cloth where it stops.
+- **Object ball path (O)**: from the object ball, a rail for each bounce, then
+  the cloth where it stops.
+
+The cue ball's path is white, the object ball's is in its color, and each ends
+in a ring. Click a path to drag its points; the contact stays against the ball
+and follows it if the ball moves. Lines mode adds anything else.
+
+Ctrl+Z / Ctrl+Y undo and redo. **Copy image** copies the table as a picture
+(2280 x 1280 PNG, leaving out handles and selection rings) to paste into a
+chat, email or document; a browser that can't copy pictures downloads it
+instead.
